@@ -1,0 +1,10 @@
+number = 5
+slug = "005-command-dispatch"
+status = "pending"
+description = """
+Implement command table and dispatch loop for sws.
+
+1. Command table (paralle..."""
+role = "production"
+context_files = []
+created_at = "2026-03-31T02:15:19"

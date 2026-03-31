@@ -1,0 +1,67 @@
+Implement the run command for launching child binaries, with structured
+$rc result record.
+
+1. Implement the run command:
+   - run program arg1 arg2 ... — launch a child binary
+   - run evaluates to run_rc (status of the run operation itself)
+   - On COR24, this will use the OS process execution mechanism
+   - For now, implement the command framework and $rc population
+
+2. Implement pragma run-rc on:
+   - Must appear as an exact statement: "pragma run-rc on"
+   - "pragma run-rc off", "pragma run-rc", and other forms → error
+   - Once enabled, remains enabled for the rest of script execution
+   - Sets a runtime flag: pragma_run_rc = 1
+
+3. Structured $rc record (populated after each run, when pragma enabled):
+   - $rc is a record (Value type VAL_REC) with these fields:
+
+   Success case (child launched and exited normally):
+     $rc.run  = 0
+     $rc.prog = <child-exit-code>
+     $rc.kind = "ok"
+
+   Not found:
+     $rc.run  = 1
+     $rc.err  = <error-code>
+     $rc.msg  = "binary not found"
+     $rc.kind = "not-found"
+
+   Crash / abnormal termination:
+     $rc.run  = 2
+     $rc.err  = <trap-code>
+     $rc.msg  = "abnormal termination"
+     $rc.kind = "crash"
+
+   Exec/loader failure:
+     $rc.run  = 3
+     $rc.err  = <loader-error>
+     $rc.msg  = "execution failure"
+     $rc.kind = "exec-failure"
+
+   Invalid run usage:
+     $rc.run  = 4
+     $rc.err  = 0
+     $rc.msg  = "invalid run invocation"
+     $rc.kind = "usage-error"
+
+4. $rc behavior:
+   - Does not exist unless pragma run-rc on is enabled
+   - After pragma, $rc is undefined until first run
+   - Reading $rc before first run → runtime error
+   - After each run, $rc is updated with new record
+   - exists? $rc.prog → safe field presence test
+
+5. Script exit codes for sws interpreter:
+   - 0 = normal success (end of script or explicit exit 0)
+   - 1..63 = script-chosen via exit N
+   - 100 = runtime/script error
+   - 101 = syntax/parse error
+
+Test:
+- pragma run-rc on; run echo hello; echo $rc.run → "0"
+- Without pragma: echo $rc → runtime error
+- pragma run-rc on; echo $rc → runtime error (before any run)
+- exists? $rc.prog after successful run → 1
+
+Reference: docs/research.txt (run command, $rc record, pragma run-rc on)

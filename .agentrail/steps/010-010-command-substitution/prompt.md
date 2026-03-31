@@ -1,0 +1,51 @@
+Implement (cmd args...) parenthesized command substitution.
+
+This is a key language feature that allows embedding command results
+within other commands, using parentheses instead of Tcl's brackets.
+
+1. Command substitution syntax:
+   - (cmd arg1 arg2) — evaluate the inner command and substitute its
+     return value into the outer command
+   - Parentheses can be nested: (eq (run foo) 0)
+   - The inner command is evaluated first, its result replaces the
+     (cmd ...) expression in the outer token list
+
+2. Tokenizer updates:
+   - Recognize ( and ) as command substitution delimiters
+   - Track parenthesis nesting depth
+   - Extract the inner command as a sub-expression
+   - Handle nested parens: (eq (run foo) (run bar))
+
+3. Evaluation updates:
+   - During token expansion, detect (cmd ...) patterns
+   - Recursively evaluate the inner command
+   - Replace the (cmd ...) with the result value's string representation
+   - This happens before the outer command is dispatched
+
+4. Integration with existing commands:
+   - set var (cmd args...) — capture command result in variable
+     Example: set rc (run cc hello.c)
+   - if {eq (run foo) 0} { ... } — inline result testing
+   - echo (pwd) — print result of pwd command
+
+5. Error handling:
+   - Unmatched parentheses → syntax error
+   - Inner command failure → propagate error to outer command
+   - Nested depth limit (MAX_NEST) to prevent stack overflow
+
+6. Arithmetic commands (basic, for use with substitution):
+   - + a b — integer addition
+   - - a b — integer subtraction
+   - * a b — integer multiplication
+   - / a b — integer division
+   - % a b — integer modulo
+   These enable: set i (+ $i 1) for loop counters
+
+Test:
+- set x (+ 1 2); echo $x → "3"
+- echo (+ 10 20) → "30"
+- set rc (run echo hello); echo $rc → run return code
+- if {eq (+ 1 1) 2} { echo math works }
+- Nested: echo (+ (+ 1 2) (+ 3 4)) → "10"
+
+Reference: docs/research.txt (command substitution via parentheses)

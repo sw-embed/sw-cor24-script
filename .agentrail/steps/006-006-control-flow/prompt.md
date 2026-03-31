@@ -1,0 +1,49 @@
+Implement control flow commands for sws: if/else and while.
+
+1. Block evaluation:
+   - A block is a { ... } token from the tokenizer
+   - To evaluate a block: strip outer braces, split into lines,
+     tokenize and evaluate each line
+   - Blocks can be nested — track depth
+   - Block evaluation shares the current variable environment
+
+2. Implement the if command:
+   - if {condition} {body}
+   - if {condition} {body} else {else-body}
+   - Condition is a block that is evaluated as a command
+   - The condition block's return value determines branching:
+     - Nonzero / truthy → execute body
+     - Zero / falsy → execute else-body (if present)
+
+3. Implement the while command:
+   - while {condition} {body}
+   - Evaluate condition block each iteration
+   - If truthy, evaluate body block, repeat
+   - If falsy, stop
+   - Implement break and continue as special return signals
+
+4. Implement comparison commands (return 1 for true, 0 for false):
+   - eq a b — equal (string or integer comparison)
+   - ne a b — not equal
+   - lt a b — less than (integer comparison)
+   - gt a b — greater than
+   - le a b — less than or equal
+   - ge a b — greater than or equal
+   - Integer comparison if both parse as integers, else string comparison
+
+5. Implement logic commands:
+   - and a b — logical AND (both truthy → 1, else 0)
+   - or a b — logical OR (either truthy → 1, else 0)
+   - not a — logical NOT (truthy → 0, falsy → 1)
+
+6. Reserve keywords (error if used as variable/command names):
+   - try, catch, finally, throw, return, proc, for, foreach, break, continue
+
+Test:
+- if {eq 1 1} { echo yes } → "yes"
+- if {eq 1 2} { echo yes } else { echo no } → "no"
+- set i 0; while {lt $i 5} { echo $i; set i (+ $i 1) }
+- Nested if/while blocks
+- Comparison command edge cases
+
+Reference: docs/research.txt (control flow, comparison commands)

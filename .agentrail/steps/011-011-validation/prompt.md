@@ -1,0 +1,60 @@
+End-to-end validation and testing of the sws interpreter.
+
+1. Write comprehensive .sws test scripts covering all features:
+
+   test-basic.sws:
+   - echo, set, variable substitution
+   - Integer and string values
+   - Comments and empty lines
+
+   test-control.sws:
+   - if/else with various conditions
+   - while loops with counters
+   - Nested control flow
+   - break and continue
+   - Comparison commands (eq, ne, lt, gt, le, ge)
+   - Logic commands (and, or, not)
+
+   test-records.sws:
+   - pragma run-rc on
+   - run command with $rc record access
+   - $rc.run, $rc.prog, $rc.err, $rc.msg, $rc.kind fields
+   - exists? for field presence testing
+   - $rc before first run → error
+
+   test-subst.sws:
+   - (cmd args...) command substitution
+   - Nested substitution
+   - Arithmetic commands (+, -, *, /, %)
+   - set var (cmd ...)
+
+   test-source.sws:
+   - source another script file
+   - Shared variables between source and caller
+   - env get/set/unset
+
+   test-errors.sws:
+   - Undefined variable access → error
+   - Undefined field access → error
+   - Unknown command → error
+   - Wrong argument count → error
+   - Unmatched braces/quotes → error
+
+2. Run all tests on the emulator:
+   - cor24-run sws.bin < test-basic.sws
+   - Compare output against expected results
+   - Create expected output files for each test
+
+3. Create scripts/test-all.sh:
+   - Run all test scripts
+   - Compare actual vs expected output
+   - Report pass/fail for each test
+   - Exit nonzero if any test fails
+
+4. Fix any bugs discovered during testing.
+
+5. Performance/limits testing:
+   - Large scripts (many lines)
+   - Deep nesting
+   - Many variables
+   - Buffer overflow protection

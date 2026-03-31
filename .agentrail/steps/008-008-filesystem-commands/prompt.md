@@ -1,0 +1,49 @@
+Implement filesystem commands for sws.
+
+These commands provide OS-level filesystem interaction. Since the COR24
+filesystem may not be fully defined yet, implement the command interface
+with stubs or emulator-compatible implementations.
+
+1. Implement filesystem commands:
+   - cd path — change current working directory
+   - pwd — print/return current working directory
+   - ls [path] — list directory contents (default: current directory)
+   - mkdir path — create directory
+   - rm path — remove file
+   - mv src dst — move/rename file
+   - cp src dst — copy file
+   - stat path — show file info (size, type)
+
+2. Filesystem abstraction layer:
+   - Define fs_* functions that wrap OS-level operations
+   - fs_chdir(path) → 0 on success, error code on failure
+   - fs_getcwd(buf) → fill buffer with current directory
+   - fs_listdir(path, callback) → iterate directory entries
+   - fs_mkdir(path) → create directory
+   - fs_remove(path) → remove file
+   - fs_rename(src, dst) → rename/move
+   - fs_copy(src, dst) → copy file
+   - fs_stat(path, info) → get file info
+
+3. Path handling:
+   - Maintain cwd as a global string buffer
+   - Handle absolute vs relative paths
+   - Path concatenation helper
+
+4. Error handling:
+   - All filesystem commands return 0 on success, nonzero on failure
+   - Print error messages: "cd: no such directory: /foo"
+   - Missing path arguments → usage error
+
+5. File existence testing:
+   - fexists path — test if file/directory exists (separate from exists?)
+   - Returns 1 if exists, 0 if not
+
+Test:
+- pwd → prints current directory
+- cd /tmp; pwd → "/tmp"
+- mkdir /tmp/test; ls /tmp → shows "test"
+- Nonexistent path errors
+
+Reference: docs/research.txt (filesystem commands)
+Note: Some commands may be stubs initially if COR24 FS is not ready.
