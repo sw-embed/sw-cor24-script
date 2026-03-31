@@ -1,0 +1,129 @@
+You are setting up the sw-cor24-script repository for AI-agent-driven
+development. This repo lives at ~/github/sw-embed/sw-cor24-script/ and
+will contain a native COR24 scripting language interpreter.
+
+Read docs/research.txt thoroughly before proceeding. It contains all
+design decisions already made. Do not revisit or change them.
+
+== WHAT THIS PROJECT IS ==
+
+sw-cor24-script implements "sws" (Software Wrighter Script), a Tcl-like
+command language interpreter for a COR24 microprocessor OS. It provides
+shell and text-editor scripting on COR24 FPGA hardware.
+
+Key design decisions already locked in (from research.txt):
+- Tcl-like command model: everything is a command, words separated by
+  whitespace, { } blocks, " " quoted strings
+- Language name: sws, file extension: .sws, binary: sws
+- Written in C, compiled by tc24r (cross C compiler from sw-cor24-x-tinyc)
+- Runs natively on COR24 hardware or emulator
+- No AST initially — tokenizer → word list → command dispatch
+- Variables via set/$ with $var.field record access
+- Comparison via commands (eq, ne, lt, gt, le, ge), not operators
+- Command substitution via (cmd args...) parentheses, not [brackets]
+- Structured run result via $rc record (run-rc pragma)
+- exists? for safe variable/field presence testing
+- Result<Value, ScriptError> error model throughout
+
+== YOUR TASKS ==
+
+1. Write a proper README.md:
+   - Project name, one-line description
+   - Overview of the sws language (Tcl-like, command-oriented)
+   - Current status: "In development"
+   - Naming convention table (same pattern as sw-cor24-assembler)
+   - Relationship to other repos (sw-cor24-x-tinyc compiles it,
+     sw-cor24-emulator runs it)
+   - License section
+
+2. Write CLAUDE.md with the agentrail protocol:
+   - Project overview paragraph
+   - CRITICAL: AgentRail Session Protocol section (copy the exact
+     protocol pattern from ~/github/sw-embed/sw-cor24-assembler/CLAUDE.md)
+   - Key Rules section
+   - Useful Commands section
+   - Build / Test section (tc24r compilation, as24 assembly, cor24-run)
+   - tc24r C Subset Constraints section (no structs, no malloc, etc.)
+   - Cross-Repo Context section listing sibling repos
+
+3. Create .agentrail/saga.toml with:
+   - name = "sws-interpreter"
+   - description of the project
+   - status = "active"
+   - current_step = 1
+   - A plan section summarizing the implementation phases
+
+4. Create saga steps in .agentrail/steps/. Derive these from the phased
+   plan in research.txt. Suggested breakdown:
+
+   001-architecture: Project scaffolding, build/test scripts, main.c
+       skeleton with UART I/O, memory layout constants, string helpers
+       (str_eq, str_len, str_copy). Verify it compiles and runs.
+
+   002-tokenizer: Line-by-line tokenizer. Split on whitespace, handle
+       { } block nesting (count braces), handle " " quoted strings,
+       strip comments (# to EOL). Output: array of token strings.
+
+   003-value-types: Implement Value type system. Integer, String, Record
+       (as parallel arrays — no structs in tc24r). Value creation,
+       comparison, printing via UART.
+
+   004-variables: Implement Env state. set command, $var substitution,
+       $var.field record field access. Variable storage as parallel
+       arrays (names + values). exists? command.
+
+   005-command-dispatch: Command table and dispatch loop. Register
+       builtin commands. Parse line → tokenize → resolve $vars →
+       dispatch to command handler. Implement echo, set, exit.
+
+   006-control-flow: if { } else { } and while { } commands.
+       Block evaluation (tokenize block body, evaluate lines).
+       Comparison commands: eq, ne, lt, gt, le, ge.
+       Logic commands: and, or, not.
+
+   007-run-command: Implement run for launching child binaries.
+       Structured $rc result record. pragma run-rc on.
+       Fields: $rc.run, $rc.prog, $rc.err, $rc.msg, $rc.kind.
+
+   008-filesystem-commands: cd, pwd, ls, mkdir, rm, mv, cp, stat.
+       Filesystem abstraction layer (may be stubs initially if no
+       COR24 filesystem exists yet).
+
+   009-source-command: source file.sws — read and evaluate a script
+       file in the current interpreter context (shared variables).
+       Also: env get/set/unset for environment variables.
+
+   010-command-substitution: Implement (cmd args...) parenthesized
+       command substitution. Nested evaluation.
+
+   011-validation: End-to-end testing. Write .sws test scripts
+       covering all features. Run on emulator, verify output.
+       Test error cases (undefined vars, unknown commands, etc.).
+
+   012-docs-release: Update README, document the language reference,
+       add CHANGES.md, push to GitHub.
+
+   Each step.toml should have [step] with name, status = "pending",
+   and a detailed prompt field explaining exactly what to implement
+   and how to test it. Reference the research.txt for design details.
+
+5. Commit everything and push to GitHub.
+
+== CONSTRAINTS ==
+
+- tc24r C subset: no structs, no malloc/free, no string library,
+  no varargs, single translation unit, 24-bit int, 8-bit char
+- All data structures must use parallel arrays or packed flat memory
+- UART I/O only (character-level via memory-mapped addresses)
+- The interpreter reads .sws scripts from UART or memory buffer
+- Keep static allocation limits reasonable (e.g., 256 variables,
+  64 nested blocks, 4KB line buffer)
+
+== SIBLING REPOS FOR REFERENCE ==
+
+- ~/github/sw-embed/sw-cor24-assembler/ — same CLAUDE.md/agentrail
+  pattern to follow (native C project with saga)
+- ~/github/sw-embed/sw-cor24-x-tinyc/ — the cross C compiler
+- ~/github/sw-embed/sw-cor24-emulator/ — the emulator for testing
+- ~/github/sw-embed/sw-cor24-macrolisp/ — another C-based interpreter
+  (similar build pattern: tc24r → as24 → cor24-run)
