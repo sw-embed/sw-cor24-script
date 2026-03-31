@@ -1,0 +1,50 @@
+[saga]
+name = "sws-interpreter"
+description = """
+Build sws (Software Wrighter Script), a native COR24 scripting language
+interpreter in C. Tcl-like command language for shell and editor scripting
+on COR24 FPGA hardware. Compiled by tc24r, tested on the emulator.
+"""
+status = "active"
+current_step = 1
+
+[plan]
+text = """
+# sws — Software Wrighter Script Interpreter
+
+Implement a Tcl-like command language interpreter for COR24, written in C
+within tc24r's supported subset. The interpreter reads .sws scripts and
+provides shell/editor scripting capabilities.
+
+## Language Design
+- Command-oriented: everything is a command, words whitespace-separated
+- { } blocks for deferred evaluation, " " quoted strings
+- $var substitution with $var.field record access
+- (cmd args...) parenthesized command substitution
+- Comparison via commands (eq, ne, lt, gt, le, ge), not operators
+- Structured $rc record for run results (opt-in via pragma run-rc on)
+- exists? for safe variable/field presence testing
+- Result<Value, ScriptError> error model throughout
+
+## Constraints
+- No structs (parallel arrays)
+- No malloc/free (static allocation with fixed limits)
+- No string library (hand-rolled)
+- Single translation unit
+- 24-bit int, 8-bit char
+- UART I/O only
+
+## Phases
+1. Architecture + scaffolding (build/test, main skeleton, string helpers)
+2. Tokenizer (whitespace splitting, braces, quotes, comments)
+3. Value types (integer, string, record as parallel arrays)
+4. Variables (set, $var, $var.field, exists?)
+5. Command dispatch (command table, dispatch loop, echo/set/exit)
+6. Control flow (if/else, while, comparison/logic commands)
+7. Run command (process execution, structured $rc, pragma run-rc on)
+8. Filesystem commands (cd, pwd, ls, mkdir, rm, mv, cp, stat)
+9. Source command (source file.sws, env get/set/unset)
+10. Command substitution ((cmd args...) nested evaluation)
+11. Validation (end-to-end testing, error cases, emulator runs)
+12. Documentation and release
+"""
