@@ -1,0 +1,6091 @@
+
+
+
+
+I've been developing cross compilers/assemblers and native compilers/assemblers/interpreters and a  p-code-vm for a future microprocessor OS.  I want to implement a shell and a text editor.  Along these lines I need a tiny scripting language with elements of bash or zsh, js, lua, python, guile, or lisp (elsip, common lisp), tcl, or even cms, tso clist, or rexx.  The thing wanted  is not a mix of features from any of these, but a utility common to most of these.  The custom scripting language will be written from scratch, as an interpreter, with the ability to load/run binaries, navigate a simple filesystem, and run conditional script logic with arguments, probably supporting a kind of environment variable system.  I would like to avoid the WAT and footguns that js is noted for.  Which other scripting languages should I consider, and of all of these, what is the simplest and easiest to create a clean room clone of?
+
+You want a small, clean, from-scratch scripting language for an eventual embedded or microprocessor-hosted OS, with these likely requirements:
+
+Interpreter first, not a heavyweight VM
+
+Shell-adjacent use cases: launch binaries, pass arguments, navigate a filesystem, inspect/set environment-like variables
+
+Control flow: conditionals, loops, functions or procedures
+
+Scriptability for system tasks, not primarily numeric/scientific computing
+
+Low implementation complexity
+
+Minimal semantic traps
+
+Reasonable path to future editor/shell integration
+
+Suitable for clean-room design, not “accidentally re-implement JavaScript badly”
+
+That means the right question is not “which language is most popular?” but:
+
+Which semantic model is simplest to specify cleanly?
+
+Which parsing model is easiest to implement?
+
+Which runtime model fits a tiny OS?
+
+Which user experience is best for shell + editor automation?
+
+High-level answer
+The simplest clean-room clone to build is usually one of these, in this order:
+
+Tcl-like
+
+Lisp/Scheme-like
+
+Forth-like command language
+
+Lua-like
+
+REXX-like
+
+For your stated goals, my recommendation is:
+
+Best overall for tiny shell scripting: Tcl-like
+
+Best overall for semantic cleanliness and future extensibility: Scheme/Lisp-like
+
+Best overall for familiarity to shell users: REXX-like or a very small Python-like
+
+Best to avoid for a clean-room tiny OS shell: JavaScript-like, Bash/Zsh-like, and probably Python-like indentation syntax
+
+The key design choice
+Before discussing languages, it helps to separate the problem into two layers.
+
+Layer 1: command processor / shell
+This is the part that understands things like:
+
+cd /tmp
+
+set PATH /bin:/usr/bin
+
+copy a.txt b.txt
+
+run cc hello.c
+
+pipelines/redirection if you add them later
+
+Layer 2: scripting language
+This is the part that understands:
+
+variables
+
+if/while/for
+
+function/procedure calls
+
+lists/maps/strings
+
+return codes / exceptions / errors
+
+A major trap is trying to make one syntax do both jobs perfectly. That is why shells get weird.
+
+A cleaner design is often:
+
+shell command language for interactive use
+
+scripting language for nontrivial automation
+
+with easy bridging between them
+
+Examples:
+
+Unix: shell + awk/sed/perl/python
+
+Emacs: commands + Elisp
+
+Tk: commands + Tcl
+
+CMS/TSO: command environment + scripting layer
+
+For your environment, a single language can still work, but the easiest success path is to make it command-oriented first.
+
+What utility is common across most scripting languages?
+The common utility is not syntax. It is this:
+
+A command-and-control glue layer
+It exists to:
+
+call commands/programs
+
+move strings, lists, and filenames around
+
+branch on success/failure
+
+loop over collections
+
+store small amounts of state
+
+interact with the OS and user
+
+automate repetitive tasks
+
+That is why the best models are those with:
+
+simple value model
+
+simple calling convention
+
+simple error model
+
+simple parser
+
+This immediately favors Tcl, Lisp/Scheme, REXX, and Lua over Bash, JS, or Python.
+
+Candidate languages to consider
+1. Tcl-like
+This is the one I would put at the top for your use case.
+
+Why Tcl is attractive
+Tcl’s core model is astonishingly small:
+
+everything is a command
+
+words are separated into arguments
+
+substitution happens in predictable phases
+
+commands return strings/values
+
+control flow is just commands too (if, while, etc.)
+
+This makes it:
+
+easy to embed
+
+easy to interpret
+
+easy to extend with native commands
+
+naturally shell-ish
+
+far cleaner than POSIX shell
+
+Why it fits your OS
+You want:
+
+run binaries
+
+navigate filesystem
+
+environment-like variables
+
+conditional logic
+
+arguments
+
+Tcl already thinks in those terms.
+
+Pros
+Very small conceptual core
+
+Parser is much simpler than Bash
+
+Great fit for command dispatch
+
+Easy to expose builtins like cd, ls, run, mount
+
+Easy to treat scripts and shell commands uniformly
+
+No operator-precedence jungle required if you keep expressions small
+
+Cons
+Everything-as-string can become awkward
+
+Quoting/substitution rules still need care
+
+Some people find Tcl syntax odd
+
+Less familiar today than Python/Lua/JS
+
+Implementation difficulty
+Low to moderate
+
+You need:
+
+tokenizer for words/braces/brackets/quotes
+
+substitution engine
+
+command dispatcher
+
+variable store
+
+list/string utilities
+
+optional expression evaluator
+
+This is much simpler than cloning Bash or Python.
+
+Clean-room clone difficulty
+Very good candidate
+
+You can borrow the style without reproducing Tcl exactly.
+
+My verdict
+If you want a shell-first scripting language, this is probably the easiest clean design to win with.
+
+2. Scheme/Lisp-like
+This is the cleanest semantically.
+
+Why Lisp is attractive
+The parser is tiny:
+
+read lists
+
+symbols
+
+numbers
+
+strings
+
+Then evaluation rules do the heavy lifting.
+
+It is very attractive if you already think in terms of interpreters, compilers, and macro systems.
+
+Why it fits your OS
+You can make:
+
+(cd "/tmp")
+
+(run "cc" "hello.c")
+
+(if (exists? file) ... ...)
+
+(setenv "PATH" "/bin")
+
+This is easy to specify and easy to implement.
+
+Pros
+Small parser
+
+Elegant semantics
+
+Easy macro story later
+
+Easy to host REPL
+
+Great for editor automation too
+
+Very extensible
+
+Minimal syntax ambiguity
+
+Cons
+Less shell-like for casual users
+
+Startup friction for users who expect command syntax
+
+Command invocation can feel verbose unless you add sugar
+
+Need to choose scope model carefully
+
+Implementation difficulty
+Low
+
+Especially if you keep it small:
+
+dynamic typing
+
+cons lists or vectors
+
+symbols
+
+simple environment frames
+
+native functions
+
+no hygienic macros at first
+
+Clean-room clone difficulty
+Excellent
+
+Probably the easiest language family to implement cleanly.
+
+My verdict
+If you want the most principled and extensible design, this is the strongest choice.
+
+3. Lua-like
+Lua is one of the best practical embeddable scripting languages ever made.
+
+Why Lua is attractive
+Small language
+
+Clean semantics
+
+Good embedding model
+
+Pragmatic standard library shape
+
+Tables are powerful
+
+Why it may or may not fit
+Lua is better as an embedded scripting language than as a shell language.
+
+You can absolutely build shell commands into it, but its syntax wants to be a language first, shell second.
+
+Pros
+Compact and elegant
+
+Very practical
+
+Small runtime by modern standards
+
+Tables reduce the number of built-in data structures needed
+
+Clear control structures
+
+Cons
+Parser is more involved than Lisp or Tcl
+
+More language machinery than you may want
+
+Expression syntax/operator precedence increases implementation burden
+
+Less naturally command-oriented
+
+Implementation difficulty
+Moderate
+
+Still much simpler than JS/Python, but more work than Tcl or Lisp.
+
+Clean-room clone difficulty
+Reasonable
+
+But more moving parts.
+
+My verdict
+Excellent if you want an embedded language for applications. Less ideal as the first shell language unless you really want a language-first system.
+
+4. REXX-like
+This is underappreciated for systems scripting.
+
+Why REXX is attractive
+REXX was designed for scripting, command execution, string handling, and OS glue.
+
+It is:
+
+readable
+
+procedural
+
+shell-friendly
+
+string-oriented
+
+much less insane than shell syntax
+
+Pros
+Human-readable
+
+Very strong for command scripting
+
+Nice string manipulation tradition
+
+Closer to CMS/TSO mental model
+
+Good for automation and batch tasks
+
+Cons
+Larger semantic surface than Tcl/Lisp
+
+Parsing is not as trivial as Lisp
+
+Fewer modern examples/tooling
+
+Slightly more “language design” work to specify precisely
+
+Implementation difficulty
+Moderate
+
+Probably easier than Python/JS, harder than Tcl/Lisp.
+
+Clean-room clone difficulty
+Good, but more care required.
+
+My verdict
+If you have historical affection for CMS/TSO/REXX style, this is a very strong choice. It may be one of the best human scripting models for your OS.
+
+5. Smalltalk-like command language
+Worth considering conceptually, though maybe not for first implementation.
+
+Pros
+Message-passing model is elegant
+
+Uniformity
+
+Great for tool integration
+
+Cons
+Requires stronger object model
+
+More conceptual weight
+
+Less shell-like
+
+Harder to make tiny
+
+Verdict
+Interesting later, not first.
+
+6. Forth-like scripting
+Since you already have Forth experience, it deserves mention.
+
+Pros
+Tiny interpreter possible
+
+Excellent for system control
+
+Interactive
+
+Easy to extend with primitives
+
+Great for resource-constrained systems
+
+Cons
+Readability suffers
+
+Poor fit for mainstream shell scripting expectations
+
+Stack discipline makes editor/shell scripts harder to maintain
+
+Strings and filesystem scripting are awkward unless you build substantial support
+
+Verdict
+Excellent systems substrate, weak general-purpose shell language unless your whole culture embraces it.
+
+7. AWK-like
+Surprisingly worth considering for a tiny command language if text processing matters.
+
+Pros
+Pattern/action is neat
+
+Great for text streams
+
+Procedural core can be small
+
+Cons
+Too specialized
+
+Not a natural full shell language
+
+Verdict
+Good as a utility later, not as the main shell language.
+
+8. Python-like
+You mentioned Python, and many people gravitate here because it feels readable.
+
+Pros
+Familiar
+
+Readable
+
+Strong procedural style
+
+Cons
+Significant parser complexity compared with Tcl/Lisp
+
+Indentation rules are annoying in tiny implementations
+
+Expression and statement grammar is nontrivial
+
+Hard to keep small without becoming an uncanny valley clone
+
+Users quickly expect far more of Python than you can provide
+
+Verdict
+Tempting but dangerous for a small clean-room OS language.
+
+9. JavaScript-like
+I agree with your instinct to avoid its traps.
+
+Pros
+Familiar to many users
+
+C-like syntax
+
+Cons
+Too much semantic baggage
+
+Many legacy footguns
+
+Spec complexity is absurd
+
+Difficult to make a “JS-like” without users assuming actual JS behavior
+
+Terrible choice for a tiny clean-room systems scripting language
+
+Verdict
+Do not use this as your model.
+
+10. Bash/Zsh-like
+This is the most dangerous inspiration here.
+
+Pros
+Familiar shell surface
+
+Natural command launching syntax
+
+Cons
+Quoting is a swamp
+
+Expansion rules are a swamp
+
+Pipelines, redirection, job control, subshells, globbing, command substitution all interact badly
+
+Very hard to design cleanly without re-inventing decades of shell pain
+
+Verdict
+Use shell ergonomics as inspiration, not shell semantics.
+
+Other scripting languages worth considering
+Here are some additional families worth examining briefly.
+
+Icon / SNOBOL descendants
+Interesting for strings and pattern matching.
+
+powerful text manipulation
+
+unusual control semantics
+
+probably not the right first shell language
+
+Janus / mu / tiny command DSLs
+Many small tools invented minimal scripting syntaxes. Their lesson is:
+
+keep values simple
+
+keep command dispatch first-class
+
+avoid too many data types
+
+DOS batch / DCL / CLIST
+Useful historical references for command interaction, but mostly examples of where syntax becomes painful if underdesigned.
+
+Pike / Io / Janet
+Modernish languages with elegant ideas. Janet in particular is small and Lisp-ish.
+But for a clean-room tiny OS, these are more inspiration than targets.
+
+Simplicity ranking: easiest to clean-room clone
+Here is the ranking I would use for your goals.
+
+Easiest parser
+Lisp/Scheme
+
+Tcl-like
+
+Forth-like
+
+Lua-like
+
+REXX-like
+
+Python-like
+
+JS-like
+
+Bash/Zsh-like
+
+Easiest runtime model
+Tcl-like
+
+Lisp/Scheme
+
+Lua-like
+
+REXX-like
+
+Forth-like
+
+Python-like
+
+JS-like
+
+Bash/Zsh-like
+
+Best shell fit
+Tcl-like
+
+REXX-like
+
+small custom shell DSL
+
+Lisp with shell sugar
+
+Lua-like
+
+Python-like
+
+JS-like
+
+Best long-term extensibility
+Lisp/Scheme
+
+Lua-like
+
+Tcl-like
+
+REXX-like
+
+Python-like
+
+Forth-like
+
+My recommendation: three viable architectures
+Option A: Tcl-like core
+This is my top recommendation for your exact request.
+
+Shape
+command-oriented syntax
+
+strings + lists as primary values
+
+commands return integer/string/list
+
+variables are dynamically typed
+
+builtins for filesystem/process/environment
+
+control constructs are just commands
+
+Example
+set src "hello.c"
+if {exists $src} {
+    run cc $src -o hello.bin
+    if {$status == 0} {
+        run ./hello.bin
+    } else {
+        echo "compile failed"
+    }
+}
+Why this wins
+shell-like without shell insanity
+
+easy to implement
+
+good interactive REPL story
+
+great for OS command integration
+
+Option B: Lisp/Scheme core with shell-friendly sugar
+This is my favorite if you care most about language cleanliness.
+
+Shape
+s-expression interpreter
+
+commands are functions
+
+add convenient command aliases
+
+possibly support one-line shell-ish forms in the REPL
+
+Example
+(let ((src "hello.c"))
+  (when (exists? src)
+    (let ((rc (run "cc" src "-o" "hello.bin")))
+      (if (= rc 0)
+          (run "./hello.bin")
+          (echo "compile failed")))))
+Why this wins
+easiest semantic correctness
+
+easiest macro/extensibility path
+
+superb for editor automation later
+
+pairs well with your existing language tooling mindset
+
+Risk
+Users may want a more shell-like experience interactively.
+
+Option C: REXX-like command language
+This is strong if you want human-readable system scripting.
+
+Example
+src = "hello.c"
+if exists(src) then do
+    rc = run("cc", src, "-o", "hello.bin")
+    if rc = 0 then
+        call run "./hello.bin"
+    else
+        say "compile failed"
+end
+Why this wins
+approachable
+
+procedural
+
+system-oriented
+
+good string handling model
+
+Risk
+Slightly more work than Tcl/Lisp to nail cleanly.
+
+What I would avoid cloning
+Avoid Bash/Zsh semantics
+You can borrow:
+
+command-first feel
+
+$VAR
+
+globbing eventually
+
+pipelines eventually
+
+But avoid:
+
+word splitting magic
+
+weird quoting layers
+
+subshell semantics by default
+
+silent expansion surprises
+
+special punctuation overload
+
+Avoid JavaScript semantics
+Especially:
+
+coercion
+
+truthiness weirdness
+
+prototype model
+
+equality madness
+
+async baggage
+
+statement/expression inconsistencies
+
+Avoid full Python semantics
+Especially:
+
+indentation significance
+
+large built-in expectations
+
+import/module expectations
+
+descriptor/class complexity
+
+The real simplicity question: syntax or semantics?
+A language can be easy to parse but hard to reason about, or vice versa.
+
+For your use case:
+
+Best semantics
+Scheme/Lisp
+
+Lua
+
+Tcl
+
+Best parser simplicity
+Lisp
+
+Tcl
+
+Best shell ergonomics
+Tcl
+
+REXX
+
+That is why Tcl-like lands in the sweet spot.
+
+Suggested minimal feature set
+Regardless of which style you choose, I would keep version 1 extremely small.
+
+Data types
+integer
+
+string
+
+list/vector
+
+boolean
+
+nil/null
+
+Optional later:
+
+map/dictionary
+
+bytes/buffer
+
+path type
+
+Variables
+local variables
+
+global environment-like variables
+
+argument vector
+
+current working directory as runtime state
+
+Control flow
+if
+
+while
+
+for-each
+
+return
+
+break
+
+continue
+
+Procedures
+named procedures/functions
+
+fixed arity first
+
+optional variadics later
+
+OS integration
+cd
+
+pwd
+
+ls
+
+mkdir
+
+rm
+
+mv
+
+cp
+
+stat
+
+exists
+
+run
+
+spawn
+
+wait
+
+exit
+
+source
+
+Error model
+Choose one:
+
+integer return code + $status
+
+exceptions/traps
+
+result objects (ok value) / (err msg)
+
+For a tiny OS shell, I would likely start with:
+
+return value
+
+global status
+
+optional catch
+
+Environment model
+dictionary of strings
+
+inherited into child processes
+
+shell locals separate from process env
+
+That separation matters and keeps things sane.
+
+My practical recommendation
+If your first goal is a usable shell quickly
+Build a Tcl-like command language.
+
+If your first goal is long-term language elegance
+Build a Scheme-like interpreter and add shell conveniences.
+
+If your first goal is readable batch/admin scripts
+Build a REXX-like procedural command language.
+
+A concrete recommendation for you
+Given your background in:
+
+compilers/assemblers
+
+interpreters
+
+p-code VM
+
+future OS tooling
+
+interest in Lisp/Forth/Pascal/COR24-like simplicity
+
+I would do this:
+
+Phase 1
+Implement a tiny Lisp core as the underlying evaluator:
+
+symbols
+
+strings
+
+ints
+
+lists
+
+native functions
+
+lexical or dynamic env
+
+REPL
+
+Phase 2
+Add a command-shell front-end syntax or reader sugar:
+
+cd /tmp
+
+run cc hello.c -o hello
+
+if exists hello.c { ... }
+
+Internally translate to the Lisp core.
+
+Why
+This gives you:
+
+tiny elegant evaluator
+
+shell-friendly UI
+
+future macro/extensibility story
+
+editor scripting story
+
+less semantic regret later
+
+That said, if you want to avoid a dual-layer design, then just go Tcl-like from day one.
+
+Bottom line
+Simplest and easiest to clean-room clone
+Scheme/Lisp-like is the easiest pure language to implement correctly.
+
+Simplest and easiest to clean-room clone for a shell-oriented OS scripting language
+Tcl-like is the best match.
+
+Best overall recommendation for your use case
+Build a Tcl-like or Lisp-backed command language, not a JS/Python/Bash clone.
+
+If you want, I can next sketch a tiny scripting language spec with:
+
+grammar
+
+data model
+
+variable rules
+
+command execution model
+
+error handling
+
+sample scripts
+
+implementation plan in layers suited to your p-code VM and future OS.
+
+
+Okay, first pass, a Tcl-like or tiny tcl scripting language.  second is to add a shell DSL to my macro lisp.   Naming, sw-cor24-tiny-cl (to avoid -tcl false advertising).   or sw-cor24-cmd (these are repo names, the actual command is TBD, maybe cl.  Thoughts?
+
+You’re deciding two separate things:
+
+What to build first: tiny Tcl-like command language now, shell DSL over Macro Lisp later
+
+What to call the repo and command without implying compatibility you do not intend to provide
+
+That is a good split. Architecturally, I would treat the first project as:
+
+a command-and-control interpreter
+
+optimized for small OS automation
+
+not a standards-compatibility project
+
+not a “language clone” in the strong sense
+
+That strongly argues against names that look too much like “Tcl implementation” unless you really want the comparison every time someone sees it.
+
+First, on the repo naming direction
+sw-cor24-tiny-cl
+This is safer than -tcl, but cl is overloaded.
+
+Possible readings:
+
+command language
+
+common lisp
+
+clist
+
+compiler language
+
+command line
+
+Pros
+short
+
+neutral
+
+avoids false Tcl claim
+
+leaves room for your own design
+
+Cons
+ambiguous
+
+“tiny-cl” may sound like “tiny Common Lisp”
+
+not obviously shell/command-oriented
+
+So it is acceptable, but not very communicative.
+
+sw-cor24-cmd
+This is much clearer.
+
+Pros
+simple
+
+honest
+
+command-oriented
+
+flexible enough for shell + scripting
+
+avoids false advertising
+
+Cons
+maybe too generic
+
+does not signal “language” vs “shell” vs “interpreter”
+
+Still, of the two, I think sw-cor24-cmd is better.
+
+My naming recommendation
+I would separate the concepts clearly:
+
+repo name = broad, durable, boring
+
+command/interpreter name = short, memorable
+
+language name = optional, possibly distinct from executable name
+
+That avoids painting yourself into a corner.
+
+Good repo naming patterns
+Best conservative choice
+sw-cor24-cmd
+
+This works if the repo may grow into:
+
+interpreter
+
+shell
+
+script runner
+
+builtins
+
+command library
+
+docs/spec/tests
+
+Better if you want to emphasize language
+sw-cor24-cmdl
+
+sw-cor24-cmdlang
+
+sw-cor24-script
+
+sw-cor24-sh
+
+Of these, I like:
+
+sw-cor24-cmdlang if you want clarity
+
+sw-cor24-cmd if you want simplicity
+
+If you want tiny-shell flavor
+sw-cor24-msh
+
+sw-cor24-csh
+
+sw-cor24-ush
+
+But these begin to look like imitation shells, which may or may not be what you want.
+
+On the actual command name
+You mentioned maybe cl.
+
+I would avoid cl unless you really want the ambiguity.
+
+Why cl is risky
+It can be read as:
+
+Common Lisp
+
+command language
+
+command line
+
+compiler launcher
+
+CLIST-like command
+
+That is survivable internally, but in docs and examples it may be muddy:
+
+cl build.cmd
+cl test.cmd
+That looks like a compiler driver on some systems.
+
+Better command-name directions
+1. cmd
+Very plain, maybe too plain.
+
+Pros
+obvious
+
+easy to explain
+
+Cons
+generic
+
+likely naming collisions in documentation and user discussion
+
+2. cli
+I would avoid it; sounds like “command-line interface,” not a language.
+
+3. cm
+Short, but vague.
+
+4. swsh / csh / msh / tsh
+These say “shell” more clearly.
+
+Of these:
+
+msh = micro shell / minimal shell
+
+tsh = tiny shell
+
+csh = bad idea because of historical collision
+
+swsh = branded, but less elegant
+
+I think msh and tsh are decent if the command is truly shell-facing.
+
+5. cmdl
+This is interesting.
+
+Pros
+looks like “command language”
+
+less overloaded than cl
+
+distinctive
+
+works as executable and language name
+
+Example:
+
+cmdl boot.cmdl
+This is one of the better options.
+
+6. clst or cli24 or cmd24
+These tie it more directly to the platform, which can be good or bad.
+
+Pros
+unique
+
+platform identity
+
+Cons
+uglier
+
+may be too ISA-specific if reused elsewhere
+
+Recommended combinations
+Combination A: safest
+Repo: sw-cor24-cmd
+
+Command: cmdl
+
+This is probably my favorite overall.
+
+Why:
+
+repo stays broad
+
+command is short and distinctive
+
+avoids Tcl false advertising
+
+avoids Common Lisp confusion
+
+Combination B: shell-forward
+Repo: sw-cor24-cmd
+
+Command: msh
+
+Good if you expect the first user-facing identity to be “the shell”.
+
+Risk:
+
+if it grows into general scripting beyond shell use, msh may feel too narrow.
+
+Combination C: language-forward
+Repo: sw-cor24-cmdlang
+
+Command: cmdl
+
+Most explicit and clean, but a bit longer.
+
+Combination D: minimal
+Repo: sw-cor24-cmd
+
+Command: cl
+
+Usable, but I think weaker than the others.
+
+I would avoid these
+Avoid tcl in the name
+Even tiny-tcl or tclish will invite:
+
+“is it Tcl compatible?”
+
+“which Tcl version?”
+
+“does it support braces/substitution/list semantics exactly?”
+
+“why doesn’t this Tcl script run?”
+
+Not worth it unless compatibility is a real project goal.
+
+Avoid cl
+Unless you already use that abbreviation consistently in your ecosystem.
+
+Avoid sh
+Too generic and implies Unix-shell behavior.
+
+Avoid csh
+Too much historical baggage.
+
+Avoid tscl
+Looks too close to Tcl and TypeScript at the same time.
+
+A more structured naming model
+Since you are building an ecosystem, this pattern may help.
+
+Repo
+Broad subsystem name:
+
+sw-cor24-cmd
+
+Language
+User-facing language/spec name:
+
+CmdL
+
+Cmd
+
+MCL if later Lisp-backed
+
+SCL if “system command language”
+
+Executable
+Short binary:
+
+cmdl
+
+msh
+
+Script extension
+Something equally honest:
+
+.cmdl
+
+.cmd
+
+.msc
+
+.scr
+
+I would avoid .cl for the same ambiguity reasons.
+
+My concrete recommendation
+For the first-pass tiny Tcl-like interpreter, I would use:
+
+Repo: sw-cor24-cmd
+
+Executable: cmdl
+
+Scripts: .cmdl
+
+Then later, for the Macro Lisp shell DSL, keep it separate:
+
+maybe in the Macro Lisp repo itself
+
+or as a sibling repo like sw-cor24-mlsh only if it becomes substantial
+
+That keeps phase 1 and phase 2 conceptually clean.
+
+Why this is a good architecture choice
+Benefits
+avoids overpromising compatibility
+
+keeps repo durable as scope grows
+
+lets the implementation evolve from:
+
+command interpreter
+
+shell builtins
+
+script runtime
+
+process execution
+
+environment handling
+
+gives you room later to decide whether:
+
+the Tcl-like system remains primary
+
+the Lisp shell DSL supersedes it
+
+both coexist
+
+Risks
+generic names can be less charming
+
+you may later wish the command had more personality
+
+That is easy to solve later with branding in docs, while changing a misleading repo name is more annoying.
+
+My ranking of your current candidates
+Best of the two you proposed
+sw-cor24-cmd
+
+sw-cor24-tiny-cl
+
+Best command names near your idea
+cmdl
+
+msh
+
+cl
+
+cmd
+
+Final recommendation
+Use:
+
+repo: sw-cor24-cmd
+command: cmdl
+script suffix: .cmdl
+and describe it as:
+
+a tiny command language and shell-oriented scripting interpreter for COR24
+
+That is accurate, flexible, and avoids false expectations.
+
+I can draft a short naming/spec README next, including repo layout, command naming, and a v0 grammar.
+
+
+I am now leaning towards script.  sw-cor24-script.  The actual command (like bash or zsh) would be just s.  Thoughts?
+
+You’re converging on a cleaner abstraction:
+
+repo = sw-cor24-script
+
+interpreter command = s
+
+That is better in one important way: “script” describes intent, not implementation lineage. It does not imply Tcl compatibility, shell compatibility, or Lisp semantics. That is good.
+
+My view in one sentence
+sw-cor24-script is a good repo name; s is probably too short for the executable unless you control the whole environment and are comfortable with friction.
+
+Repo name: sw-cor24-script
+I think this is stronger than sw-cor24-cmd.
+
+Why it works
+It says:
+
+this is about scripting
+
+not just an interactive shell
+
+not just built-in commands
+
+likely includes language, interpreter, runtime, and script library
+
+That seems aligned with what you described.
+
+Benefits
+broad enough for growth
+
+honest
+
+easy to understand
+
+avoids false advertising
+
+leaves room for both:
+
+interactive shell usage
+
+non-interactive script execution
+
+Risks
+slightly generic
+
+if you later add a separate shell and separate scripting language, script may feel broader than the initial implementation
+
+But that is a manageable risk, and I think this is a good durable repo name.
+
+Command name: s
+Here I’m much less enthusiastic.
+
+What is attractive about s
+tiny
+
+easy to type
+
+elegant in a minimalist way
+
+feels like a monitor command on a small system
+
+So I do see the appeal.
+
+The practical problems
+1. Searchability
+Trying to search docs, logs, examples, or source for s is miserable.
+
+Examples:
+
+s build.scr
+s test.scr
+In logs or prose, s disappears into everything else.
+
+2. Documentation clarity
+Sentences like:
+
+Run s init.scr
+
+look neat, but the command name carries almost no meaning.
+
+3. Shell collisions / aliases / habits
+A one-letter command can be okay in a tightly controlled environment, but on host systems it often becomes annoying:
+
+easy to mistype
+
+easy to shadow
+
+easy to forget
+
+hard to grep for in scripts and docs
+
+4. Future tooling friction
+If you later build:
+
+s interpreter
+
+sc compiler
+
+se editor
+
+sh shell helper
+
+you may discover that the shortest name was not the most useful anchor.
+
+Architectural question: is the primary identity “script” or “shell”?
+This matters because the executable name should reflect what the user experiences first.
+
+If the tool is primarily:
+A script interpreter
+then names like these fit:
+
+script
+
+scr
+
+scrpt
+
+st
+
+sr
+
+sx
+
+An interactive shell with scripting
+then names like these fit:
+
+sh
+
+msh
+
+tsh
+
+ush
+
+A command language
+then:
+
+cmdl
+
+cl
+
+cmd
+
+Since you are now leaning toward script, I would use an executable that still hints at that.
+
+My recommendation on naming
+Best overall combination
+Repo: sw-cor24-script
+
+Command: scr or script or st
+
+Of those, I think:
+
+Strongest practical choice
+scr
+
+Why:
+
+short
+
+readable
+
+suggestive of script
+
+better than s for logs/docs/search
+
+still tiny enough for an embedded system culture
+
+Example:
+
+scr boot.scr
+scr init.scr
+scr -i
+That feels good.
+
+How I would rank command options
+Best practical options
+scr
+
+st
+
+script
+
+cmdl
+
+s
+
+Why st is interesting
+It is short and distinctive, but less obviously “script” than scr.
+
+Why script itself is mixed
+It is explicit, but a bit long, and may collide conceptually with host tooling terminology.
+
+If you still really want s
+It can work, but I would treat it as:
+
+the in-OS short command
+
+with a more descriptive host-side tool name
+
+For example:
+
+repo: sw-cor24-script
+
+host executable: scr
+
+in-OS alias: s
+
+That gives you both:
+
+practicality on host systems
+
+tiny elegance on the target system
+
+This is actually a very good compromise.
+
+Suggested naming model
+Repo
+sw-cor24-script
+
+Language name
+Could simply be:
+
+Script
+
+COR24 Script
+
+Script/24
+
+S language, informally
+
+Host executable
+scr
+
+In-target alias
+s
+
+Script extension
+I would avoid .s because of assembler collision.
+
+Better choices:
+
+.scr
+
+.scr24
+
+.cscr
+
+.cmd
+
+Of these, I like:
+
+.scr if you want simplicity
+
+.scr24 if you want uniqueness
+
+Pros and cons of your current idea
+sw-cor24-script
+Pros
+clear
+
+future-proof
+
+honest
+
+broad enough
+
+Cons
+generic, but acceptable
+
+s
+Pros
+tiny
+
+elegant
+
+memorable in a minimalist system-software sense
+
+Cons
+poor searchability
+
+poor discoverability
+
+weak documentation ergonomics
+
+likely annoying on host systems
+
+My actual recommendation
+I would do this:
+
+repo: sw-cor24-script
+host command: scr
+target alias: s
+extension: .scr
+That gives you a clean layered story:
+
+project is “script”
+
+tool is scr
+
+tiny shell-friendly alias is s
+
+That preserves your minimalist instinct without paying all the usability costs.
+
+If choosing only one command name
+Choose scr, not s.
+
+If you want, I can next draft a README header + naming rationale + v0 command examples for sw-cor24-script.
+
+
+so, I am thinking that ss might be a better commnad, for Software Wrighter Script (or maybe sws).  sw-cor24-script (to distinguish from future sw-{sw370,sw390,sw1130,sw1802,swV}-script all called sws but running on different ISAs
+
+You’re essentially designing a namespace strategy for a family of scripting runtimes across ISAs, plus a human-usable command name. That’s a good time to be deliberate.
+
+Let me break this into the same layers you’re implicitly thinking about:
+
+1. Requirements (what your naming needs to satisfy)
+You want:
+
+One conceptual language/runtime family across:
+
+COR24
+
+SW370 / SW390
+
+1130 / 1802
+
+V (virtual/emulated)
+
+Consistent branding
+
+Clean repo structure
+
+Small, ergonomic command
+
+Avoid collisions / ambiguity
+
+Usable in docs, logs, scripts
+
+Room for growth (compiler, tools, libs later)
+
+2. Evaluate your candidates
+Option A: ss
+Pros
+very short
+
+easy to type
+
+somewhat mnemonic (“script system” / “software script”)
+
+Cons (important)
+extremely overloaded
+
+Linux: ss (socket statistics tool)
+
+common abbreviation everywhere
+
+terrible searchability
+
+visually weak in logs:
+
+ss boot.scr
+ss test.scr
+disappears in text
+
+hard to grep reliably
+
+no obvious semantic meaning to new users
+
+Verdict
+Too generic / overloaded to be a good primary command name
+
+Option B: sws
+Pros
+matches your branding: Software Wrighter Script
+
+consistent across architectures
+
+distinctive enough
+
+scalable across platforms
+
+readable in logs:
+
+sws boot.scr
+sws init.scr
+Cons
+slightly longer than minimal
+
+not instantly obvious meaning to outsiders (but that’s fine)
+
+Verdict
+Strong candidate
+
+Option C: s (your earlier idea)
+Pros
+ultra minimal
+
+elegant on target system
+
+Cons
+same issues as ss, worse
+
+terrible ergonomics outside a very controlled environment
+
+Verdict
+Only acceptable as an alias, not primary
+
+Option D: scr (previous suggestion)
+Pros
+intuitive
+
+readable
+
+compact
+
+no brand coupling
+
+Cons
+doesn’t tie into your “Software Wrighter” identity
+
+less unique across your ecosystem
+
+Verdict
+Technically strong, but weaker for your multi-ISA branding goal
+
+3. Multi-ISA architecture (this is the key insight)
+You’re actually designing something like:
+
+sw-{arch}-script   (repos)
+        ↓
+   same language/runtime family
+        ↓
+   common command name
+So the command should:
+
+be architecture-neutral
+
+represent the language/runtime family
+
+not encode ISA in the binary name
+
+That strongly favors one stable command name across all targets.
+
+4. Recommended structure
+Repo naming (good as-is)
+sw-cor24-script
+sw-sw370-script
+sw-sw390-script
+sw-1130-script
+sw-1802-script
+sw-v-script
+This is excellent. Keep it.
+
+Command naming (recommended)
+Primary command
+sws
+Optional aliases
+s      (target system convenience)
+scr    (host convenience, optional)
+Script extension
+Avoid .s (assembler conflict)
+
+Use:
+
+.scr
+or
+
+.sws
+My recommendation
+.scr → better usability
+
+.sws → stronger branding
+
+You could even support both.
+
+5. Why sws is the best fit
+1. It scales across architectures
+You explicitly want:
+
+all called sws but running on different ISAs
+
+That is exactly what sws gives you.
+
+2. It matches your ecosystem naming
+You already have:
+
+pjmai-rs
+
+reg-rs
+
+other sw-* repos
+
+sws fits naturally into that family.
+
+3. It is distinctive
+Unlike s or ss, sws:
+
+is easy to grep
+
+stands out in logs
+
+avoids collisions with system tools
+
+4. It leaves room for future tools
+You may later add:
+
+sws → interpreter
+
+sws-c → compiler (if you go there)
+
+sws-fmt → formatter
+
+sws-lint
+
+sws-repl
+
+That ecosystem naming works nicely.
+
+6. Potential refinement: naming layers
+You can formalize your structure like this:
+
+Layer 1: Organization / ecosystem
+sw
+Layer 2: Platform
+cor24 / sw370 / sw390 / ...
+Layer 3: subsystem
+script
+Layer 4: tool
+sws
+This gives you:
+
+Layer	Example
+Repo	sw-cor24-script
+Binary	sws
+Script file	boot.scr
+That’s clean.
+
+7. Risks & mitigations
+Risk: “What does sws mean?”
+Mitigation:
+
+Document once in README:
+
+sws = Software Wrighter Script
+
+After that, it becomes just a name (like awk, sed, lua, etc.)
+
+Risk: too many short acronyms
+Mitigation:
+
+keep docs consistent
+
+always show examples
+
+Risk: alias confusion
+Mitigation:
+
+make sws canonical
+
+treat s as optional convenience only
+
+8. Final recommendation
+Use:
+repo: sw-cor24-script
+command: sws
+alias (optional): s
+extension: .scr (or .sws if you want branding)
+9. My ranking of your latest ideas
+sws ✅ best balance
+
+scr (if you didn’t care about branding)
+
+ss ❌ too overloaded
+
+s ❌ only as alias
+
+10. Small but important suggestion
+In your docs, define it like this early:
+
+sws is a small, command-oriented scripting language and interpreter designed for Software Wrighter systems.
+
+That positions it correctly without tying you to Tcl semantics or shell semantics.
+
+If you want next, I can sketch:
+
+a v0 sws command model (execution semantics)
+
+minimal grammar (Tcl-like but cleaned up)
+
+how to map builtins (cd, run, etc.)
+
+and how to later layer your Macro Lisp DSL on top cleanly without conflict
+
+
+clarification: sw-v-script is for RISC-V.  maybe sw-riscv-script would be a better repo name.  binary/command: sws; filetype .sws 
+
+That clarification helps a lot—now you’re clearly designing a portable scripting runtime family with per-ISA repos but a unified user-facing tool (sws).
+
+Bottom line (short answer)
+Repo name: prefer sw-riscv-script over sw-v-script
+
+Binary/command: sws ✅ strong choice
+
+Filetype: .sws ✅ good (with optional .scr compatibility if desired)
+
+Overall: this is a solid, scalable naming system.
+
+1. Repo naming: sw-riscv-script vs sw-v-script
+Why sw-riscv-script is better
+Pros
+explicit and unambiguous
+
+searchable
+
+future-proof (no “what did v mean?” later)
+
+consistent with other ISA names:
+
+sw-cor24-script
+sw-riscv-script
+sw-sw370-script
+sw-1802-script
+Cons
+slightly longer (but repo names should favor clarity over brevity)
+
+Why sw-v-script is risky
+ambiguous (“virtual?”, “version?”, “vector?”, “v1?”)
+
+not self-documenting
+
+bad for long-term maintainability
+
+Verdict
+Use sw-riscv-script
+
+2. Command name: sws
+This choice gets stronger in this context.
+
+Why it works especially well now
+You’ve defined:
+
+one language/runtime family
+
+multiple ISA-specific implementations
+
+single user-facing command
+
+That means:
+
+sws   ← stable user interface
+regardless of platform.
+
+Pros
+consistent across architectures
+
+distinctive and grep-friendly
+
+avoids conflicts (ss, s)
+
+aligns with your ecosystem branding
+
+extensible:
+
+sws run file.sws
+sws -i
+sws fmt
+sws lint
+Cons
+initial “what does it mean?” (minor, solved by docs)
+
+Verdict
+Keep sws as the canonical command
+
+3. File extension: .sws
+This is a good choice—better than .scr for your goals.
+
+Pros
+tightly bound to your language
+
+avoids assembler .s conflict
+
+avoids generic .scr ambiguity
+
+supports multi-ISA identity:
+
+boot.sws works on cor24, riscv, sw370, etc.
+Cons
+slightly less immediately recognizable than .scr
+
+Verdict
+.sws is the right default
+
+Optional compatibility idea
+You could allow:
+
+.sws (canonical)
+
+.scr (accepted)
+
+but not required.
+
+4. Overall architecture (this is now very clean)
+You’ve converged on a strong structure:
+
+Repos
+sw-cor24-script
+sw-riscv-script
+sw-sw370-script
+sw-sw390-script
+sw-1130-script
+sw-1802-script
+Binary
+sws
+Scripts
+boot.sws
+init.sws
+build.sws
+Execution model
+sws boot.sws
+This gives you:
+
+portable scripts
+
+per-ISA runtimes
+
+consistent UX
+
+5. Long-term extensibility (important check)
+Your naming holds up well if you later add:
+
+Tooling
+sws fmt
+sws lint
+sws repl
+sws run
+sws compile   (if you ever go there)
+Libraries
+lib/
+  fs.sws
+  proc.sws
+  net.sws
+Integration with Macro Lisp
+You can later do:
+
+Lisp layer calls into sws
+
+or embed sws inside Lisp
+
+or vice versa
+
+Naming does not constrain you.
+
+6. One subtle improvement to consider
+You might optionally standardize a platform identifier flag, e.g.:
+
+sws --target cor24
+sws --target riscv
+Even if each repo builds its own binary, this gives you:
+
+shared CLI surface
+
+easier testing on host systems
+
+possibility of cross-runner later
+
+Not required now, but your naming supports it nicely.
+
+7. Risks and mitigations
+Risk: multiple repos drift apart
+Mitigation:
+
+define a shared language spec early
+
+maybe a common test suite:
+
+sw-script-tests/
+Risk: .sws becomes too tied to one implementation
+Mitigation:
+
+document it as language-level, not implementation-level
+
+Risk: sws not discoverable
+Mitigation:
+
+README tagline:
+
+sws — Software Wrighter Script interpreter
+
+8. Final recommendation
+Lock this in:
+repo: sw-cor24-script
+repo: sw-riscv-script   (not sw-v-script)
+
+command: sws
+
+file extension: .sws
+Optional additions:
+alias: s        (only on target systems, optional)
+9. Summary judgment
+This is now:
+
+clean
+
+consistent
+
+scalable
+
+non-misleading
+
+aligned with your architecture goals
+
+You’ve avoided:
+
+Tcl compatibility traps
+
+shell syntax traps
+
+JS/Python baggage
+
+naming ambiguity
+
+And you’ve set yourself up for:
+
+multi-ISA portability
+
+layered evolution (Tcl-like → Lisp DSL)
+
+tooling ecosystem growth
+
+If you want next, I can define a minimal sws v0 spec (syntax + execution model + builtins) tailored to your OS and p-code VM constraints.
+
+
+changes: sw-s370-script could be sw-370-script (a 24-bit 16 register ISA similar to IBM S/370.  likewise for 390 (24/31 bit 16gpr + 16ar register ISA similar to S/390.  sw-1802-script and sw-1130-script are good.
+
+You’re tightening the naming toward ISA fidelity + consistency across a family, which is exactly the right instinct. Let’s sanity-check the changes and make sure they scale cleanly.
+
+1. Restating your updated plan
+You now have:
+
+Repos
+sw-cor24-script
+sw-riscv-script
+sw-370-script
+sw-390-script
+sw-1802-script
+sw-1130-script
+Command
+sws
+Filetype
+.sws
+2. Evaluate the 370 / 390 naming shift
+Change
+sw-s370-script → sw-370-script
+
+sw-s390-script → sw-390-script
+
+This is a good change
+Why it works better
+1. Removes unnecessary prefix duplication
+You already have:
+
+sw-...
+So:
+
+sw-s370-script   (redundant “s”)
+becomes:
+
+sw-370-script    (cleaner)
+2. Matches how people mentally refer to the ISA
+“370”
+
+“390”
+
+Not usually “s370” unless being very formal.
+
+3. Improves visual consistency
+Compare:
+
+Before	After
+sw-s370-script	sw-370-script
+sw-s390-script	sw-390-script
+The “after” version is cleaner and easier to scan.
+
+3. Cross-repo consistency check
+Let’s normalize all repo names:
+
+sw-cor24-script
+sw-riscv-script
+sw-370-script
+sw-390-script
+sw-1802-script
+sw-1130-script
+Observations
+Good
+all follow: sw-<arch>-script
+
+all lowercase
+
+hyphen-separated
+
+no ambiguity inside each name
+
+Slight asymmetry (acceptable)
+some are numeric (370, 390, 1802, 1130)
+
+some are textual (cor24, riscv)
+
+This is fine and reflects reality. Don’t force uniformity where it reduces clarity.
+
+4. Optional refinement (only if you want stricter symmetry)
+You could consider:
+
+sw-s370-script
+sw-s390-script
+to match:
+
+riscv
+cor24
+But:
+
+Why I would NOT do that
+adds noise
+
+less natural naming
+
+not how you mentally refer to them
+
+reduces readability
+
+Verdict
+Your current choice (sw-370-script, sw-390-script) is better
+
+5. Command + repo interaction
+Your model now clearly separates:
+
+Platform-specific implementation
+sw-<arch>-script
+Platform-neutral interface
+sws
+This is excellent.
+
+Example UX (consistent across all ISAs)
+sws boot.sws
+sws build.sws
+Users do not need to care which ISA they’re on.
+
+6. File extension .sws
+Still a strong choice here.
+
+Especially important now:
+Since you have multiple ISAs, .sws becomes:
+
+language-level identifier
+
+not tied to any specific architecture
+
+That’s exactly what you want.
+
+7. Naming scalability (future-proof check)
+Your structure supports:
+
+New ISAs
+sw-arm-script
+sw-x86-script
+sw-mips-script
+Variants
+sw-390x-script
+sw-riscv64-script
+Emulated / virtual
+sw-emu-script
+sw-sim-script
+No changes needed to command or extension.
+
+8. Potential edge-case consideration
+sw-370-script vs historical associations
+Someone might assume:
+
+exact IBM S/370 compatibility
+
+But you already clarified:
+
+similar to IBM S/370
+
+Mitigation
+Just document clearly:
+
+370 refers to a 24-bit 16-GPR ISA inspired by IBM S/370
+
+No naming change needed.
+
+9. Final structure (clean and recommended)
+Repos
+sw-cor24-script
+sw-riscv-script
+sw-370-script
+sw-390-script
+sw-1802-script
+sw-1130-script
+Command
+sws
+Scripts
+boot.sws
+init.sws
+build.sws
+10. Overall assessment
+You now have:
+
+Strengths
+clean naming
+
+consistent pattern
+
+scalable across architectures
+
+no false advertising
+
+good separation of concerns:
+
+repo = implementation
+
+sws = interface
+
+.sws = language
+
+Risks (minor)
+numeric arch names slightly inconsistent with textual ones (acceptable)
+
+need documentation to explain ISA differences (expected)
+
+11. Verdict
+This is now a very solid, production-quality naming scheme.
+
+I would lock it in.
+
+If you want next, we can move into:
+
+v0 sws execution model (how commands run, return codes, env, etc.)
+
+or minimal syntax spec (Tcl-like but cleaned up) tailored to your OS constraints
+
+
+one tweak: sw-riscv-script could be sw-rvi32-script (for RISC-V I32 subset) there are names for different levels of RISC-V (and 64 like you mentioned).  
+
+That tweak is directionally right—you're moving from brand-name ISA (“riscv”) → concrete ABI/ISA level, which is exactly what you’ll want long-term. But there’s a subtle trap here.
+
+1. Restating the intent
+You want repo names to encode:
+
+actual ISA constraints
+
+not just marketing family (“RISC-V”)
+
+so behavior/perf/features are predictable
+
+That’s a good instinct.
+
+2. Evaluate sw-rvi32-script
+What you’re trying to express
+RISC-V RV32I subset
+
+Problem
+rvi32 is not standard nomenclature
+
+The standard naming is:
+
+RV32I
+RV32IM
+RV32IMC
+RV64I
+RV64GC
+...
+So:
+
+rvi32 → ambiguous / nonstandard
+
+rv32i → precise and widely understood
+
+3. Recommended naming
+Use:
+sw-rv32i-script
+Why this is better
+1. Matches official RISC-V naming
+recognizable to anyone familiar with RISC-V
+
+aligns with toolchains, docs, specs
+
+2. Scales naturally
+sw-rv32im-script
+sw-rv32imc-script
+sw-rv64gc-script
+3. Self-documenting
+No need to explain what “rvi32” means.
+
+4. Updated full repo set
+sw-cor24-script
+sw-rv32i-script
+sw-370-script
+sw-390-script
+sw-1802-script
+sw-1130-script
+This is now very clean.
+
+5. Consistency check
+Repo	Meaning clarity	Standard naming	Good?
+sw-cor24-script	custom ISA	N/A	✅
+sw-rv32i-script	precise	yes	✅
+sw-370-script	conventional	yes	✅
+sw-390-script	conventional	yes	✅
+sw-1802-script	conventional	yes	✅
+sw-1130-script	conventional	yes	✅
+You now have a nice mix of:
+
+historical ISA naming
+
+modern ISA naming
+
+custom ISA naming
+
+All consistent with how people actually refer to them.
+
+6. Architectural benefits of this change
+1. Implementation clarity
+Each repo encodes:
+
+word size
+
+register model
+
+instruction capabilities
+
+This matters for:
+
+interpreter performance
+
+calling conventions
+
+binary execution model
+
+memory model differences
+
+2. Future-proofing
+You can now cleanly add:
+
+sw-rv32im-script
+sw-rv32imc-script
+sw-rv64i-script
+sw-rv64gc-script
+without ambiguity.
+
+3. Cross-testing potential
+You could later do:
+
+sws --target rv32i
+sws --target cor24
+and reuse the same test suite.
+
+Your naming now supports that nicely.
+
+7. One small optional improvement
+If you want to be very explicit, you could standardize:
+
+sw-rv32i-script
+instead of mixing:
+
+sw-riscv-script
+(which you already replaced—good)
+
+8. Final recommendation
+Use:
+sw-rv32i-script
+Avoid:
+sw-rvi32-script   ❌
+9. Final locked-in structure
+repos:
+  sw-cor24-script
+  sw-rv32i-script
+  sw-370-script
+  sw-390-script
+  sw-1802-script
+  sw-1130-script
+
+command:
+  sws
+
+file extension:
+  .sws
+10. Verdict
+This change improves:
+
+precision
+
+scalability
+
+credibility (especially to systems people)
+
+long-term maintainability
+
+You’re now using real ISA naming conventions, which is exactly the right move.
+
+If you want next, we can define:
+
+a portable sws execution contract (what scripts can rely on across ISAs)
+
+or a minimal syntax grammar that keeps your Tcl-like goals but removes the common pitfalls
+
+
+Yes, sw-rv32i-script is good for when I do that.  Now that we've nailed down naming, I want to implement just sw-cor24-script repo sws command and support for .sws files.  What TCL-like set of keywords, operations, concepts are we starting with?  What language is TCL normally implemented in?  C, assembler, itself?
+
+You’re at the right moment to freeze a minimal v0 spec before coding. I’ll outline:
+
+What you’re building (requirements + architecture)
+
+A tiny Tcl-like core model tailored for COR24
+
+v0 keywords / commands (small, sufficient set)
+
+Execution semantics (how scripts actually run)
+
+Parser + interpreter design (fits your toolchain mindset)
+
+What Tcl is implemented in (historical + practical answer)
+
+1. Requirements (restated for design clarity)
+You want:
+
+Tiny interpreter (runs on COR24 eventually)
+
+Script-driven OS control:
+
+run binaries
+
+filesystem ops
+
+environment variables
+
+Control flow:
+
+if, loops
+
+Arguments
+
+No JS-style footguns
+
+Clean-room design
+
+Easy to extend later (Lisp DSL integration)
+
+Non-goals (important)
+No Tcl compatibility guarantee
+
+No shell quoting madness
+
+No complex type system
+
+No heavy expression grammar
+
+2. Core design choice: “Tcl-like, but simplified”
+Classic Tcl model:
+
+Everything is a command:
+command arg1 arg2 arg3
+
+We keep that—but simplify aggressively.
+
+Core idea for sws
+1. Every line is a command
+set x 10
+echo hello
+run cc hello.c
+2. Words are whitespace-separated
+(No implicit shell splitting tricks)
+
+3. Variables use $
+set x 10
+echo $x
+4. Blocks use { ... }
+(no substitution inside unless you choose later)
+
+if {exists file.txt} {
+    echo found
+}
+3. Minimal v0 command set
+Keep this very small. You can grow later.
+
+A. Core language commands
+Variables
+set name value
+get name
+unset name
+Example:
+
+set x 42
+echo $x
+Control flow
+if
+if {condition} {
+    ...
+} else {
+    ...
+}
+while
+while {condition} {
+    ...
+}
+Comparison / logic (as commands, not operators)
+Avoid expression parser complexity.
+
+eq a b
+ne a b
+lt a b
+gt a b
+le a b
+ge a b
+Example:
+
+if {eq $x 10} {
+    echo ten
+}
+Boolean helpers
+and cond1 cond2
+or cond1 cond2
+not cond
+B. I/O and shell-like commands
+Output
+echo args...
+Exit
+exit code
+C. Filesystem (minimal OS layer)
+cd path
+pwd
+ls [path]
+exists path
+rm path
+mkdir path
+D. Process execution
+Run a program
+run program arg1 arg2 ...
+Returns exit code.
+
+Capture result
+set rc [run cc hello.c]
+(You can implement [ ... ] later; for v0 you can avoid it and use $status)
+
+Simpler v0 alternative
+Just define:
+
+status   ; last return code
+Example:
+
+run cc hello.c
+if {ne $status 0} {
+    echo compile failed
+}
+E. Environment
+env get NAME
+env set NAME VALUE
+env unset NAME
+F. Script execution
+source file.sws
+4. Syntax rules (keep it simple)
+Tokens
+split on whitespace
+
+support:
+
+bare words
+
+quoted strings "..." (optional in v0)
+
+block { ... }
+
+Substitution (v0)
+Only support:
+
+$var
+Skip:
+
+command substitution [ ... ]
+
+backslash escapes (optional later)
+
+5. Execution model
+Each command returns:
+integer (status)
+
+or string (optional)
+
+Global:
+$status
+Execution loop
+Pseudo:
+
+for each command:
+    expand variables
+    dispatch command
+    store result in $status
+Error model
+Start simple:
+
+non-zero return = failure
+
+no exceptions yet
+
+later: add catch
+
+6. Example v0 script
+set src hello.c
+
+if {exists $src} {
+    echo compiling $src
+    run cc $src -o hello
+
+    if {ne $status 0} {
+        echo compile failed
+        exit 1
+    }
+
+    run ./hello
+} else {
+    echo file not found
+}
+7. Interpreter architecture (fits your background)
+You can implement this cleanly in layers:
+
+Layer 1: tokenizer
+split into tokens
+
+handle { ... } blocks
+
+optionally "..."
+
+Layer 2: parser
+convert line → list of words
+
+no AST needed initially
+
+Layer 3: evaluator
+eval(command):
+    resolve variables
+    dispatch command
+Layer 4: command table
+HashMap<String, fn(args) -> Result>
+Layer 5: runtime state
+struct Env {
+    vars: HashMap<String, String>,
+    status: i32,
+    cwd: Path,
+}
+8. What Tcl is implemented in
+Short answer:
+Tcl is implemented in C
+
+More complete answer
+Original Tcl (1988, John Ousterhout)
+implemented in C
+
+designed as an embedded scripting language
+
+Why C?
+portability
+
+easy embedding in applications
+
+performance
+
+system-level access
+
+Bootstrapping?
+Not written in Tcl itself originally
+
+Core interpreter is C
+
+Many extensions written in C
+
+Scripts written in Tcl
+
+Modern Tcl
+still primarily C
+
+some components/extensions in Tcl
+
+can embed Tcl interpreter in apps
+
+Key takeaway for you
+Your approach is aligned with Tcl philosophy:
+
+small interpreter in a systems language, scripting on top
+
+For you:
+
+host side: Rust (ideal)
+
+target side: COR24 C / assembly
+
+9. Recommended v0 scope (very important)
+MUST HAVE
+set, $var
+
+if
+
+while
+
+echo
+
+run
+
+$status
+
+{} blocks
+
+exists, cd
+
+SHOULD HAVE
+comparison commands (eq, etc.)
+
+source
+
+SKIP FOR NOW
+[ ... ] substitution
+
+functions/procs
+
+lists
+
+quoting complexity
+
+pipelines
+
+redirection
+
+globbing
+
+10. Design philosophy (keep you out of trouble)
+Do this
+commands, not syntax
+
+explicit over implicit
+
+no hidden splitting
+
+no magic coercion
+
+Avoid
+Bash-style expansion chaos
+
+JS coercion
+
+Python indentation rules
+
+complex expression grammar early
+
+11. Suggested next step
+Implement:
+
+tokenizer
+
+command dispatch
+
+set, echo, if, run
+
+$status
+
+Then test with:
+
+echo hello
+set x 5
+echo $x
+12. If you want next
+I can:
+
+define a precise grammar (EBNF) for .sws
+
+give a Rust skeleton project for the interpreter
+
+or design how this will later embed into your Macro Lisp DSL cleanly
+
+
+It seems that a magic status variable has limitations.  Why can't we require run to evaluate to the return code value.  Then we can check run status in a conditional without setting a variable.  If we want to set a variable we coud use: "set status run foo arg" and then use $status in a later conditional, and rename status if we need more than one?
+
+Yes — that is a better design for sws.
+
+A magic global $status is convenient, but it creates the usual shell problems:
+
+hidden state
+
+accidental overwrite
+
+temporal coupling (“what changed status?”)
+
+awkward nesting
+
+harder reasoning in larger scripts
+
+What you’re proposing is closer to a real expression/value model:
+
+run foo arg evaluates to an integer return code
+
+if can test that directly
+
+set can capture it when needed
+
+That is cleaner.
+
+Recommendation
+Make run return a numeric value, and make if evaluate commands/expressions that produce values.
+
+Then:
+
+if {eq [run foo arg] 0} {
+    echo ok
+}
+or, in your simplified style without Tcl’s []:
+
+if {eq (run foo arg) 0} {
+    echo ok
+}
+or if you want to avoid nested syntax entirely:
+
+set status run foo arg
+if {eq $status 0} {
+    echo ok
+}
+The key point is:
+
+run should produce a value
+not just produce side effects plus update hidden interpreter state.
+
+Why this is better architecturally
+1. Referential clarity
+This:
+
+set status run foo arg
+makes the data flow explicit.
+
+Instead of:
+
+run command
+
+interpreter mutates hidden status
+
+later code reads hidden status
+
+you get:
+
+run command
+
+result becomes an explicit value
+
+optionally assign it
+
+That is easier to reason about.
+
+2. Better composition
+If run returns a value, you can later support patterns like:
+
+if {ne (run build hello.c) 0} {
+    exit 1
+}
+or
+
+set rc run build hello.c
+set rc2 run test hello
+No hidden collision.
+
+3. Better nesting
+A global status variable breaks down when you do multiple operations in one logical expression.
+
+Value-returning commands fix that.
+
+4. Fewer shell footguns
+This moves you away from Bourne shell semantics and closer to a more regular interpreter.
+
+That is good.
+
+One important syntax issue
+Your proposed form:
+
+set status run foo arg
+can work, but only if set has special evaluation rules.
+
+Because there are two possibilities:
+
+Interpretation A
+set name value...
+where the value is the concatenation of remaining words
+
+Then:
+
+set status run foo arg
+would literally store the string "run foo arg".
+
+Interpretation B
+set name <expression>
+where the remaining tokens are evaluated as a command expression
+
+Then:
+
+set status run foo arg
+would run foo arg and store its return code.
+
+So if you want that syntax, you need to define set accordingly.
+
+I would recommend one of these two models
+Model 1: explicit command substitution syntax
+This is the cleanest semantically.
+
+Example:
+
+set status [run foo arg]
+if {eq [run foo arg] 0} {
+    echo ok
+}
+Pros
+unambiguous
+
+composable
+
+familiar to Tcl users
+
+keeps set simple
+
+Cons
+requires nested parsing
+
+slightly more implementation work
+
+This is probably the best long-term design.
+
+Model 2: set evaluates a command tail specially
+Example:
+
+set status (run foo arg)
+if {eq (run foo arg) 0} {
+    echo ok
+}
+or even:
+
+set status run foo arg
+Pros
+simpler surface syntax
+
+maybe easier for early scripts
+
+Cons
+special-case behavior in set
+
+less uniform language semantics
+
+harder to extend cleanly
+
+can become ambiguous
+
+I would avoid the bare:
+
+set status run foo arg
+because it makes set too magical.
+
+Best v0 compromise
+For sws, I would suggest:
+
+Rule
+Every command returns a value.
+
+For now
+Top-level commands return:
+
+integer for run
+
+string for pwd
+
+boolean/int for predicates like exists
+
+Add a minimal explicit substitution form
+Not necessarily Tcl [] if you do not want to look too Tcl-like.
+
+You could use one of:
+
+[run foo arg]
+
+(run foo arg)
+
+$(run foo arg) — probably confusing
+
+do { run foo arg } — more verbose
+
+My favorite for your environment is probably:
+
+(run foo arg)
+because:
+
+easy to parse
+
+Lisp-friendly future direction
+
+avoids Tcl false-advertising
+
+visually clear
+
+Then:
+
+if {eq (run foo arg) 0} {
+    echo ok
+}
+
+set status (run foo arg)
+That is very clean.
+
+About conditionals
+If commands return values, then predicates should also return values.
+
+So define:
+
+exists path → 1 or 0
+
+eq a b → 1 or 0
+
+lt a b → 1 or 0
+
+run cmd ... → exit code integer
+
+Then:
+
+if {exists foo.txt} {
+    echo found
+}
+works naturally if if treats nonzero as true and zero as false.
+
+And:
+
+if {run foo arg} {
+    echo success
+}
+is probably not what you want, because Unix-style exit codes use 0 for success.
+
+So you should either:
+
+Option A
+Require explicit comparison:
+
+if {eq (run foo arg) 0} {
+    echo success
+}
+Option B
+Provide helper predicates:
+
+if {ok (run foo arg)} {
+    echo success
+}
+where ok x means x == 0.
+
+I recommend both explicit comparison and an ok helper.
+
+Suggested v0 semantic model
+Types
+integers
+
+strings
+
+booleans as integers (0 false, nonzero true)
+
+Command results
+run ... → exit code integer
+
+exists path → 1 or 0
+
+eq a b → 1 or 0
+
+pwd → string
+
+cd path → maybe 0 on success, nonzero on failure
+
+echo ... → 0
+
+Variable assignment
+Use:
+
+set var value
+set var (command ...)
+Examples:
+
+set rc (run foo arg)
+set here (pwd)
+set found (exists boot.sys)
+This is consistent and avoids magic globals.
+
+Should $status exist at all?
+You can still keep it, but I would make it:
+
+optional convenience
+
+always updated to the most recent command result
+
+not required for correct programming style
+
+That gives you:
+
+Good style
+set rc (run foo arg)
+if {ok $rc} {
+    echo success
+}
+Convenient REPL style
+run foo arg
+echo $status
+That is a nice compromise.
+
+So my answer is:
+
+Yes, require run to evaluate to the return code.
+And more broadly:
+
+commands should generally evaluate to values.
+Keep $status only as a convenience alias for the last result, not as the primary programming model.
+
+My concrete recommendation
+Use this model:
+
+set rc (run foo arg)
+if {eq $rc 0} {
+    echo success
+}
+
+if {ok (run foo arg)} {
+    echo success
+}
+and optionally support:
+
+run foo arg
+echo $status
+for interactive convenience.
+
+Final verdict
+Your instinct is right:
+
+value-returning commands are cleaner than a magic status variable
+
+explicit assignment is better than hidden state
+
+optional $status is fine as a convenience, not as the core model
+
+The only tweak I would make is:
+
+do not make set status run foo arg special
+
+instead require an explicit expression/subcommand form such as:
+
+set status (run foo arg)
+
+That keeps the language regular.
+
+I can next sketch a compact v0 syntax and evaluation spec for sws using this value-returning model.
+
+
+I dislike $status being there by default.  If someone wants to use it can we have some pragma like command that runs early in a script to enable this behavior?  Does that make sense?
+
+Yes, that makes sense, and I think it is the better default.
+
+Recommendation
+Do not provide $status by default.
+
+Instead:
+
+make command results explicit
+
+allow scripts to opt in to implicit last-result state
+
+keep the default language semantics clean and regular
+
+That gives you a safer core language and still leaves room for shell-style convenience.
+
+Why this is a good idea
+A default $status creates hidden ambient state even if users never asked for it. That tends to leak into code style and eventually into language design.
+
+Your preferred model is better:
+
+run foo arg returns a value
+
+set rc (run foo arg) stores it
+
+if {ok (run foo arg)} { ... } checks it directly
+
+This keeps:
+
+data flow explicit
+
+scripts easier to read
+
+nested logic cleaner
+
+interpreter semantics more regular
+
+Then, for users who want shell-ish convenience, an early directive can enable a last-result variable.
+
+Should it be a pragma?
+Yes, but I would distinguish between two related ideas:
+
+1. Interpreter option / mode switch
+This changes runtime behavior.
+
+Example:
+
+option last-result on
+or
+
+feature last-result on
+This is the cleanest conceptually.
+
+2. Pragma / script directive
+This declares script requirements or preferences.
+
+Example:
+
+pragma last-result on
+This is also fine, especially if you expect more script-level toggles later.
+
+Either can work. I would lean toward pragma only if you expect a family of up-front declarations. Otherwise option or feature is plainer.
+
+My suggestion
+Use a directive that must appear before ordinary executable statements, such as:
+
+pragma last-result on
+Then, and only then, the interpreter auto-populates a variable after each command, perhaps named:
+
+$last
+not $status.
+
+Why not $status?
+Because status strongly implies shell exit code semantics, but your language is broader than that:
+
+pwd returns a string
+
+exists foo returns a boolean/integer
+
+run foo returns a process exit code
+
+read file might return text
+
+future commands may return lists or maps
+
+So a general “last result” variable is more honest than “status”.
+
+Better names than $status
+$last
+
+$result
+
+$rc only for run, not generally
+
+$it if you want terseness, though that can get cryptic
+
+I would choose:
+
+$last for generic last command result
+
+optionally later a special helper like ok x for exit codes
+
+Best design choice
+Default mode
+No ambient variable at all.
+
+Example:
+
+set rc (run foo arg)
+if {eq $rc 0} {
+    echo ok
+}
+Opt-in mode
+pragma last-result on
+run foo arg
+if {eq $last 0} {
+    echo ok
+}
+That is coherent.
+
+One subtle issue
+If you enable a last-result variable, you should define exactly which commands update it.
+
+The cleanest rule is:
+
+Every evaluated command updates $last to its returned value.
+
+That means:
+
+pragma last-result on
+set x 3
+echo $last
+would show whatever set returns.
+
+That is regular, but maybe surprising.
+
+An alternative rule is:
+
+Only top-level commands update $last.
+
+That avoids nested expression weirdness.
+
+Example:
+
+set x (run foo arg)
+Under top-level-only semantics:
+
+the nested run does not overwrite $last
+
+the top-level set does
+
+But then users may ask what set returns.
+
+So if you add this feature, define it carefully.
+
+My preferred rule
+If enabled:
+
+$last is updated after each top-level command statement completes, using that statement’s final result.
+
+That keeps it understandable in scripts and REPLs.
+
+Suggested directive set
+You could reserve a tiny family of early directives:
+
+pragma last-result on
+pragma strict-vars on
+pragma undef-vars error
+pragma legacy-off
+For now, just implement one:
+
+pragma last-result on
+and perhaps later:
+
+pragma last-result off
+Alternative design
+Instead of a pragma, you could make it a runtime flag:
+
+sws --last-result script.sws
+That is useful for interactive sessions, but weaker for script portability because the script’s assumptions are no longer self-contained.
+
+So for scripts, the pragma is better.
+
+A nice combination is:
+
+script pragma for script-controlled behavior
+
+CLI flag for REPL convenience
+
+My concrete recommendation
+Use:
+
+pragma last-result on
+with:
+
+no $status by default
+
+$last introduced only when enabled
+
+commands returning explicit values as the primary model
+
+Then scripts look like this.
+
+Clean default style
+set rc (run foo arg)
+if {eq $rc 0} {
+    echo success
+}
+Optional convenience style
+pragma last-result on
+
+run foo arg
+if {eq $last 0} {
+    echo success
+}
+Final verdict
+Yes, it makes sense.
+
+In fact, it is a strong design choice because it:
+
+preserves a clean core language
+
+avoids hidden state by default
+
+allows shell-like convenience only when explicitly requested
+
+I would do it, but I would name the opt-in variable $last or $result, not $status.
+
+
+hmmm, how about: pragma run-rc on and then only set $rc for run commands, simpler
+
+Yes — that is simpler, and I think it is better than a generic “last result” feature.
+
+Recommendation
+Use:
+
+pragma run-rc on
+and define:
+
+$rc is not present by default
+
+when enabled, $rc is updated only by run
+
+no other command touches $rc
+
+That gives you a small convenience feature without contaminating the core language model.
+
+Why this is better than $status or $last
+1. Narrow scope
+$rc has one job:
+
+the most recent process return code from run
+
+That is much easier to explain than:
+
+$status = result of anything?
+
+$last = value of any prior command?
+
+2. Less semantic confusion
+If pwd returns a string and exists returns a boolean, then a generic implicit variable quickly becomes muddy.
+
+But run returning a process exit code is special and familiar. So a special opt-in $rc is reasonable.
+
+3. Preserves explicit values as the primary model
+Your main style stays:
+
+set rc (run foo arg)
+if {eq $rc 0} {
+    echo ok
+}
+And the convenience style becomes:
+
+pragma run-rc on
+run foo arg
+if {eq $rc 0} {
+    echo ok
+}
+That is coherent.
+
+Suggested semantics
+Default
+No implicit $rc.
+
+With pragma
+After each successful evaluation of a top-level run ... statement:
+
+interpreter sets $rc to the integer exit code returned by run
+
+No other command updates it.
+
+Important design question: top-level only or any run?
+You should choose one of these.
+
+Option A: any run updates $rc
+Example:
+
+set x (run foo arg)
+This updates $rc.
+
+Pros
+intuitive if user thinks “a run happened”
+
+easy to implement
+
+Cons
+nested expressions can silently mutate ambient state
+
+Option B: only top-level run updates $rc
+Example:
+
+set x (run foo arg)
+does not update $rc, unless the entire statement itself is a top-level run.
+
+Pros
+less spooky action
+
+keeps $rc more shell-like
+
+Cons
+slightly less intuitive in some cases
+
+more bookkeeping in evaluator
+
+My recommendation
+Use Option A:
+
+whenever run is evaluated, it may update $rc if pragma run-rc on is enabled.
+
+Reason:
+
+simpler mental model
+
+simpler implementation
+
+if a user enables implicit state, they are already opting into that convenience
+
+Just document it clearly.
+
+What should happen before the first run?
+You have two reasonable choices.
+
+Choice 1: $rc is undefined until first run
+This is the cleaner option.
+
+Pros:
+
+no fake default
+
+catches mistakes
+
+Cons:
+
+slightly more runtime checks
+
+Choice 2: $rc starts at 0
+Feels shell-like, but weaker semantically.
+
+I recommend:
+
+Undefined until first run
+and if accessed too early:
+
+either runtime error
+
+or falsey/empty if you want a looser model
+
+I’d prefer a runtime error, especially for v0.
+
+Interaction with explicit assignment
+This should still work and remain preferred for nontrivial scripts:
+
+set build_rc (run build hello.c)
+set test_rc (run test hello)
+if {eq $build_rc 0} {
+    echo build ok
+}
+The pragma should not discourage explicit style. It should only support interactive/repl/simple-shell convenience.
+
+Example usage
+Clean explicit style
+set rc (run cc hello.c -o hello)
+if {eq $rc 0} {
+    run ./hello
+}
+Convenience style
+pragma run-rc on
+
+run cc hello.c -o hello
+if {eq $rc 0} {
+    run ./hello
+}
+Multiple runs
+pragma run-rc on
+
+run build hello.c
+if {ne $rc 0} {
+    echo build failed
+    exit 1
+}
+
+run test hello
+if {ne $rc 0} {
+    echo test failed
+    exit 1
+}
+One small naming thought
+run-rc is good. It is specific and understandable.
+
+You could also consider:
+
+pragma run-rc on
+
+pragma run-rc off
+
+That is perfectly fine.
+
+I would avoid broader names like:
+
+pragma shell-mode on
+
+pragma status on
+
+because those invite more magic later.
+
+Final recommendation
+Yes, do this:
+
+pragma run-rc on
+with these rules:
+
+default: no $rc
+
+when enabled: run updates $rc
+
+no other command updates $rc
+
+$rc is undefined until first run
+
+explicit value-returning commands remain the primary model
+
+That gives you a clean language with an opt-in shell convenience.
+
+
+and "pragma run-rc off" is an error (so we do not have to implement it) -- only thing we implement is "pragma run-rc on" (and we do not allow "pragma run-rc" without the on.  It is either always on or not.  also, $rc before run has been called could be -1?  or an exception?
+
+Yes. That is a good simplification.
+
+You are narrowing this from a general settings system to a single one-way script directive. For v0, that is exactly the right move.
+
+Recommendation
+Implement exactly this:
+
+pragma run-rc on
+and nothing else in the pragma family yet.
+
+That means:
+
+pragma run-rc on → valid
+
+pragma run-rc off → error
+
+pragma run-rc → error
+
+any other pragma form → error
+
+This keeps the parser and runtime small, and it keeps the language spec crisp.
+
+Why this is a good v0 choice
+1. Small implementation surface
+You only need:
+
+parse pragma
+
+recognize exact tokens run-rc on
+
+set one runtime flag
+
+No reversible modes, no partial syntax, no generic pragma framework yet.
+
+2. Clear script intent
+A script either opts into shell-like run convenience or it does not.
+
+That matches your stated model:
+
+default language is explicit
+
+shell convenience is opt-in
+
+once enabled, it stays enabled
+
+3. Avoids configuration semantics creep
+If you support off, soon you will be tempted to support:
+
+more pragmas
+
+nested scope
+
+toggling in included files
+
+dynamic behavior changes
+
+For v0, one-way enablement is much safer.
+
+Should $rc before first run be -1 or an exception?
+Between those two, I recommend:
+
+Exception / runtime error
+not -1.
+
+Why exception is better
+1. Undefined should be undefined
+Before run has executed, there is no actual return code.
+
+If you set $rc = -1, you are inventing a value that looks meaningful.
+
+That creates ambiguity:
+
+did a command actually fail with -1?
+
+is -1 a sentinel?
+
+can user code rely on it?
+
+what if future systems use negative status conventions internally?
+
+Even if external process return codes are normally nonnegative, a sentinel still becomes hidden magic.
+
+2. It catches mistakes early
+This script:
+
+pragma run-rc on
+if {eq $rc 0} {
+    echo ok
+}
+should probably fail loudly, because the author forgot to run something first.
+
+That is much better than silently comparing against a fake default.
+
+3. More consistent with explicit variables
+If your language is trying to be clean, then reading a variable before meaningful assignment should be an error unless explicitly defined otherwise.
+
+Why -1 is tempting but weaker
+Pros
+easy to implement
+
+convenient for REPL-ish behavior
+
+avoids one class of runtime error
+
+Cons
+hidden sentinel
+
+less precise semantics
+
+easier for bugs to pass silently
+
+harder to reason about later
+
+I think that tradeoff is not worth it.
+
+Best v0 rule
+Use this exact behavior:
+
+Default mode
+$rc does not exist
+
+After pragma run-rc on
+$rc becomes a reserved implicit variable name
+
+but it is uninitialized / undefined
+
+first attempt to read $rc before any run command has completed is a runtime error
+
+After run ...
+$rc is set to that command’s integer return code
+
+That is simple and honest.
+
+Recommended wording for the spec
+You could define it like this:
+
+pragma run-rc on
+Enables automatic update of the reserved variable $rc whenever the run command is evaluated.
+
+Rules
+This pragma may only be written as exactly pragma run-rc on
+
+pragma run-rc
+
+pragma run-rc off
+
+and all other run-rc pragma forms are errors
+
+Once enabled in a script, it remains enabled for the rest of that script execution
+
+$rc is undefined until the first successful evaluation of run
+
+Reading $rc before it has been set is a runtime error
+
+That is a good v0 contract.
+
+One subtle design choice: what counts as “successful evaluation of run”?
+You should distinguish:
+
+A. run command is parsed and invoked, target program executes, returns code
+Then $rc gets set.
+
+B. run itself fails before launching
+Examples:
+
+binary not found
+
+invalid argument count
+
+OS loader failure
+
+What should happen?
+
+I recommend:
+
+run still returns an integer code if possible
+
+for launch failure, map to a reserved nonzero runtime code
+
+and set $rc to that code too
+
+Why:
+
+keeps run easy to use in conditionals
+
+makes $rc consistently meaningful
+
+Example:
+
+pragma run-rc on
+run no-such-program
+echo $rc
+should show a failure code, not crash the interpreter, unless the failure is truly internal/catastrophic.
+
+So there are really two classes of failure:
+
+Script/runtime errors
+malformed syntax
+
+unknown variable
+
+invalid command form
+
+These should raise interpreter errors.
+
+Ordinary command-launch failures
+executable not found
+
+could not open file
+
+child returned nonzero
+
+These should become run result codes.
+
+That separation will help a lot.
+
+Recommended behavior examples
+Valid
+pragma run-rc on
+run foo arg
+if {eq $rc 0} {
+    echo ok
+}
+Error: missing on
+pragma run-rc
+Error: unsupported toggle
+pragma run-rc off
+Error: premature read
+pragma run-rc on
+echo $rc
+Explicit style still preferred
+set build_rc (run build hello.c)
+if {ne $build_rc 0} {
+    exit 1
+}
+My final recommendation
+Implement exactly this:
+
+Syntax
+pragma run-rc on
+Not supported
+pragma run-rc
+pragma run-rc off
+$rc semantics
+does not exist unless pragma is enabled
+
+after pragma is enabled, $rc exists conceptually but is undefined
+
+reading $rc before first run is a runtime error
+
+after each run, $rc becomes that return code
+
+Why
+This gives you:
+
+minimal implementation
+
+clear semantics
+
+no fake sentinel values
+
+good error detection
+
+So between -1 and exception, I would choose exception/runtime error.
+
+
+what is $rc if the run command fails because the binary is not in the path, because the binary threw an exception (not sure what this is exactly, not yet defined, but the command crashed before setting 0 or non-zero rc).  Do we consider run returning a tuple? (run-rc, binary-rc) good is (0, 0), actual result from binary is (0, result-is-zero-or-non-zero), not found is (1, but-what-goes-here-not-a-zero-I-hope), crash is (2, same-issue)
+
+Yes — this is exactly the place where a single integer return code starts to get muddy.
+
+You have at least two distinct layers of outcome:
+
+Did the run builtin itself succeed in launching/managing the program?
+
+If the program ran, what did the program return?
+
+Those are not the same thing.
+
+So your instinct is right: you should model them separately.
+
+Short answer
+For sws, I would not make run return only one flat integer.
+
+I would make run return a structured result conceptually equivalent to:
+
+(run-status, program-status)
+where:
+
+run-status = status of the run command itself
+
+program-status = exit code from the program, only meaningful if run-status == 0
+
+Then:
+
+success + program returns 0 → (0, 0)
+
+success + program returns 7 → (0, 7)
+
+binary not found → (1, undefined)
+
+crashed before normal exit → (2, undefined) or (2, signal-or-trap-info) later
+
+loader error / permission failure → (3, undefined)
+
+That is the cleanest model.
+
+Why a single integer is not enough
+Suppose run foo returns 1.
+
+What does that mean?
+
+binary executed and returned 1?
+
+binary not found?
+
+loader failed?
+
+runtime trap?
+
+child crashed?
+
+run builtin itself malformed?
+
+Those are semantically different.
+
+If you collapse them, scripts become fragile and vague.
+
+Best v0 design: run returns a small result object
+Even if the language does not yet expose true tuples, the internal model should be:
+
+RunResult {
+  run_rc: int,
+  prog_rc: int?,
+}
+Where prog_rc is optional / undefined unless launch was successful and the process exited normally.
+
+Suggested meanings
+run_rc
+Status of the run command itself:
+
+0 = program launched and completed normally; prog_rc is valid
+
+1 = program not found
+
+2 = program crashed / trapped / abnormal termination
+
+3 = loader or execution failure
+
+4 = invalid run usage
+
+maybe reserve higher values for future cases
+
+prog_rc
+Only valid when run_rc == 0.
+
+0 = program success
+
+nonzero = program-defined failure/result code
+
+What should $rc mean under pragma run-rc on?
+It should not be ambiguous.
+
+So I recommend:
+
+$rc should mean run_rc
+not prog_rc.
+
+Why?
+
+Because $rc is owned by the run command machinery, not by the launched program.
+
+That means:
+
+binary not found → $rc = 1
+
+program crashed → $rc = 2
+
+launch ok, program returned 7 → $rc = 0
+
+This is consistent:
+$rc tells you whether run succeeded as an operation.
+
+Then you need another way to access the program’s own return code.
+
+Add a second implicit variable, only if pragma is enabled
+Maybe:
+
+$rc = run command status
+
+$prog_rc = child program return code, valid only when $rc == 0
+
+Then:
+
+Example
+pragma run-rc on
+run foo arg
+
+if {eq $rc 0} {
+    if {eq $prog_rc 0} {
+        echo success
+    } else {
+        echo program failed
+    }
+} else {
+    echo run failed
+}
+That is much cleaner than trying to overload one integer.
+
+Your tuple idea is strong
+Conceptually, yes:
+
+(run-rc, binary-rc)
+is the right model.
+
+The question is only how to surface it in v0.
+
+You have three choices.
+
+Option A: true tuple result
+Example:
+
+set r (run foo arg)
+set x (first $r)
+set y (second $r)
+Pros
+cleanest language design
+
+future-friendly
+
+explicit
+
+Cons
+requires tuples/lists early
+
+more runtime machinery
+
+more syntax/support functions
+
+For v0, this may be too much.
+
+Option B: run returns run_rc, pragma also sets $prog_rc
+Example:
+
+pragma run-rc on
+run foo arg
+
+if {eq $rc 0} {
+    echo program rc is $prog_rc
+}
+Pros
+easy to implement
+
+keeps explicit distinction
+
+preserves your opt-in ambient state idea
+
+fits shell-like usage
+
+Cons
+ambient variables still exist if pragma enabled
+
+not as elegant as a real structured result
+
+This is probably the best v0 compromise.
+
+Option C: run returns program rc on success, special negative/system codes on failure
+Example:
+
+success + child returns 7 → 7
+
+not found → -1
+
+crash → -2
+
+Pros
+tiny implementation
+
+Cons
+conflates layers again
+
+invents magic sentinels
+
+awkward if program return codes might someday span full integer space
+
+poor extensibility
+
+I do not recommend this.
+
+Recommended v0 model
+Internal model
+Always represent run as:
+
+run_rc, prog_rc
+Surface model
+For v0:
+
+run ... returns run_rc
+
+with pragma run-rc on, interpreter sets:
+
+$rc = run_rc
+
+$prog_rc = prog_rc if valid, otherwise undefined
+
+This gives you a very practical scripting model.
+
+Suggested run_rc values
+You need a small stable table.
+
+I suggest:
+
+run_rc	Meaning
+0	run succeeded; program started and exited normally
+1	binary not found
+2	abnormal termination / trap / crash
+3	loader / exec failure / bad format / permissions
+4	invalid run usage
+5	internal OS/runtime failure while running
+Then prog_rc is:
+
+valid only for run_rc == 0
+
+undefined otherwise
+
+How to treat “binary threw an exception”
+You said “not yet defined,” which is fine. At this stage, you only need a category.
+
+For now, define it as:
+
+abnormal termination
+Any case where:
+
+program started
+
+but did not perform a normal return/exit with a defined exit code
+
+maps to:
+
+run_rc = 2
+prog_rc = undefined
+Later, when your OS defines traps/signals/exceptions, you can refine this to:
+
+run_rc = 2
+trap_code = N
+prog_rc = undefined
+or expose some additional detail variable.
+
+Do not overdesign that now.
+
+Example behaviors
+1. Normal success
+Program runs and returns 0:
+
+run_rc = 0
+prog_rc = 0
+With pragma:
+
+$rc = 0
+$prog_rc = 0
+2. Normal program failure
+Program runs and returns 17:
+
+run_rc = 0
+prog_rc = 17
+With pragma:
+
+$rc = 0
+$prog_rc = 17
+3. Binary not found
+run_rc = 1
+prog_rc = undefined
+With pragma:
+
+$rc = 1
+$prog_rc = undefined
+Reading $prog_rc should error unless you check $rc == 0 first.
+
+4. Crash / trap
+run_rc = 2
+prog_rc = undefined
+5. Bad executable format
+run_rc = 3
+prog_rc = undefined
+How scripts would look
+Explicit style
+If you eventually add structured results:
+
+set r (run foo arg)
+if {eq (run-rc $r) 0} {
+    if {eq (prog-rc $r) 0} {
+        echo ok
+    }
+}
+v0 pragma style
+pragma run-rc on
+run foo arg
+
+if {eq $rc 0} {
+    if {eq $prog_rc 0} {
+        echo ok
+    } else {
+        echo program returned failure
+    }
+} else {
+    echo run failed
+}
+That is readable and precise.
+
+Should run itself return run_rc or the tuple?
+For v0, I recommend:
+
+run returns run_rc
+because:
+
+simpler evaluator
+
+simpler if usage
+
+no tuple/list feature required yet
+
+still leaves room for later structured results
+
+Then once you add lists/tuples, you can introduce something like:
+
+runx returning a result object
+
+or make run return a result object in a later language version if you are willing to break compatibility
+
+or add accessors to ambient state only when pragma enabled
+
+But for v0, keep it small.
+
+My concrete recommendation
+Use this model
+run result
+run ... evaluates to run_rc
+
+If pragma run-rc on is active
+set $rc to run_rc
+
+set $prog_rc only when run_rc == 0
+
+otherwise $prog_rc becomes undefined
+
+Proposed run_rc codes
+0 = child exited normally; check $prog_rc
+
+1 = not found
+
+2 = abnormal termination/crash/trap
+
+3 = exec/loader failure
+
+4 = bad run invocation
+
+5 = interpreter/runtime internal failure
+
+Final verdict
+Yes, conceptually run wants a two-part result.
+
+For v0, the best compromise is:
+
+internal tuple/model: (run_rc, prog_rc)
+
+surface return value: run_rc
+
+optional pragma variables: $rc and $prog_rc
+
+That gives you:
+
+clean semantics
+
+easy implementation
+
+no ambiguity between launcher failure and program failure
+
+room to add real tuples later
+
+If you want, the next step is to define the exact v0 command set and grammar around this model, including if, set, block syntax, variable substitution, and run.
+
+
+Thinking in Rust terms: Result(Option<int>,Error<int,string>) would be interrogated as some? $rc and error_int? $rc and error_msg? $rc
+
+Yes — in Rust terms, you are circling around the right distinction, but for the script language I would not expose a Rust-shaped Result<Option<int>, Error<int,string>> directly.
+
+That would leak implementation structure into the language and make scripts awkward.
+
+Instead, use Rust internally to model the states cleanly, then expose a small script-facing contract.
+
+Restating the design problem
+run can end in several different states:
+
+Program launched and exited normally
+
+there is a valid program exit code
+
+Program could not be launched
+
+not found, bad format, permission problem, etc.
+
+Program launched but terminated abnormally
+
+trap, exception, crash, killed, etc.
+
+run itself was used incorrectly
+
+bad arguments, internal runtime failure
+
+Those are not all the same kind of outcome.
+
+Best split: script-facing vs implementation-facing
+Internally in Rust
+Use a strong enum.
+
+Something like this is much better than Result<Option<int>, Error<int,string>>:
+
+enum RunOutcome {
+    Exited { prog_rc: i32 },
+    NotFound,
+    ExecFailure { code: i32, message: String },
+    Crashed { code: i32, message: String },
+    UsageError { message: String },
+}
+Or, if you want to preserve a smaller uniform numeric layer:
+
+enum RunOutcome {
+    Exited(i32),                 // child returned this rc
+    Failed { run_rc: i32, msg: String },
+}
+That is easier to reason about than nested Result<Option<...>, ...>.
+
+Externally in sws
+Expose something much simpler.
+
+I recommend:
+
+run ... evaluates to run_rc
+
+optionally, with pragma run-rc on:
+
+$rc = run_rc
+
+$prog_rc = child return code, but only if run_rc == 0
+
+$error_int = numeric failure detail, when applicable
+
+$error_msg = optional text detail, when applicable
+
+That gives you a practical script interface.
+
+What should $rc mean?
+This is the key question.
+
+Recommendation
+$rc should mean:
+
+status of the run builtin itself
+
+So:
+
+$rc = 0 → program launched and exited normally
+
+$rc = 1 → not found
+
+$rc = 2 → crashed / abnormal termination
+
+$rc = 3 → exec/loader failure
+
+$rc = 4 → invalid run invocation
+
+$rc = 5 → internal runtime failure
+
+That makes $rc stable and easy to teach.
+
+Then:
+
+$prog_rc is only meaningful if $rc == 0
+
+This mirrors your earlier two-level model cleanly.
+
+Why not make $rc be the child’s exit code?
+Because then you lose the distinction between:
+
+child returned 1 normally
+
+child never ran because not found
+
+Those are very different.
+
+So $rc should be the run status, not the program status.
+
+Should you expose $error_int and $error_msg?
+Yes, but only if pragma run-rc on is enabled.
+
+That gives you a compact shell-like interface:
+
+$rc — run status
+
+$prog_rc — child exit code if run succeeded
+
+$error_int — finer-grained error code for failure cases
+
+$error_msg — human-readable detail
+
+This is much better than trying to encode everything in one number.
+
+Suggested semantics
+When pragma run-rc on is not enabled
+None of these implicit variables exist:
+
+$rc
+
+$prog_rc
+
+$error_int
+
+$error_msg
+
+Users must assign explicit values.
+
+When pragma run-rc on is enabled
+After every run:
+
+Case 1: child ran and exited normally with code 7
+$rc = 0
+$prog_rc = 7
+$error_int = undefined
+$error_msg = undefined
+Case 2: binary not found
+$rc = 1
+$prog_rc = undefined
+$error_int = 1         ; or ENOENT-like code if you have one
+$error_msg = "not found"
+Case 3: child crashed
+$rc = 2
+$prog_rc = undefined
+$error_int = trap_or_signal_code_if_known
+$error_msg = "abnormal termination"
+Case 4: loader/exec failure
+$rc = 3
+$prog_rc = undefined
+$error_int = loader_error_code
+$error_msg = "bad executable format"
+Should $error_int duplicate $rc?
+Not necessarily.
+
+Think of it this way:
+
+$rc = broad category
+
+$error_int = specific detail
+
+Example:
+
+Not found
+$rc = 1
+$error_int = 101
+$error_msg = "binary not found in path"
+Permission denied
+$rc = 3
+$error_int = 102
+$error_msg = "permission denied"
+Bad format
+$rc = 3
+$error_int = 103
+$error_msg = "invalid executable format"
+That gives you room later without breaking the contract.
+
+Rust mapping
+If you want a Rust-ish internal model that maps nicely to script variables, I would use something like:
+
+struct RunInfo {
+    run_rc: i32,              // broad category, script-visible as $rc
+    prog_rc: Option<i32>,     // script-visible as $prog_rc
+    error_int: Option<i32>,   // script-visible as $error_int
+    error_msg: Option<String> // script-visible as $error_msg
+}
+And then run() returns:
+
+type RunResult = RunInfo;
+not Result<Option<int>, Error<int,string>>.
+
+Why?
+
+Because your script model is not really success/error in the Rust sense. Even “program returned nonzero” is not an interpreter error. It is just an ordinary result.
+
+A plain struct with optional fields is actually better here.
+
+If you really want a Rust enum
+Then this is better than Result<Option<int>, Error<...>>:
+
+enum RunInfo {
+    Exited { prog_rc: i32 },
+    NotFound { error_int: i32, error_msg: String },
+    Crashed { error_int: i32, error_msg: String },
+    ExecFailure { error_int: i32, error_msg: String },
+    UsageError { error_int: i32, error_msg: String },
+}
+And then convert that into script variables.
+
+That keeps your Rust side strong and your script side simple.
+
+Script examples
+Normal success
+pragma run-rc on
+run foo arg
+
+if {eq $rc 0} {
+    if {eq $prog_rc 0} {
+        echo ok
+    } else {
+        echo child returned nonzero
+    }
+} else {
+    echo run failed
+}
+Not found
+pragma run-rc on
+run nosuchcmd
+
+if {ne $rc 0} {
+    echo $error_msg
+}
+Crash
+pragma run-rc on
+run buggyprog
+
+if {eq $rc 2} {
+    echo crash code $error_int
+}
+Minimal v0 version
+If you want to stay very small, you do not need all four implicit variables yet.
+
+Smallest practical set
+$rc
+
+$prog_rc
+
+$error_msg
+
+You can add $error_int later.
+
+But if your underlying OS/runtime naturally has numeric reason codes, then adding $error_int now is fine.
+
+My recommendation
+Script-visible model
+With pragma run-rc on, after run:
+
+$rc = run status category
+
+$prog_rc = child exit code, only when $rc == 0
+
+$error_int = optional detail code
+
+$error_msg = optional detail string
+
+Internal Rust model
+Prefer either:
+
+Struct
+struct RunInfo {
+    run_rc: i32,
+    prog_rc: Option<i32>,
+    error_int: Option<i32>,
+    error_msg: Option<String>,
+}
+or
+
+Enum
+enum RunInfo {
+    Exited { prog_rc: i32 },
+    Failed { run_rc: i32, error_int: i32, error_msg: String },
+}
+Then normalize into the script variables.
+
+Direct answer to your question
+Result(Option<int>,Error<int,string>) would be interrogated as some? $rc and error_int? $rc and error_msg? $rc?
+
+My answer:
+
+Do not expose that Rust shape directly
+
+expose:
+
+$rc
+
+$prog_rc
+
+$error_int
+
+$error_msg
+
+where $rc is the top-level run category
+
+That will be much easier to use and much easier to evolve.
+
+If you want, I can turn this into a compact run spec for sws v0, including exact meanings of $rc, $prog_rc, $error_int, and $error_msg.
+
+
+not happy yet.  can we have a struct-like $rc (one name only) with fields that may or may not exist, and have an exists? command.  So, (1) pragma run-rc on (2) ...run something... (3) if exists? $rc.rc && eq $it 0 { then ... } else if exists? $rc.err && ne $it 0 { then say $rc.err + $rc.msg } // this is psuedocode
+
+Yes. That is better.
+
+You are moving from “magic scalar variable” toward a single structured run-result object, which is much cleaner.
+
+Recommendation
+With:
+
+pragma run-rc on
+have run populate exactly one implicit variable:
+
+$rc
+where $rc is a record/object/map-like value with optional fields.
+
+That gives you:
+
+one name to remember
+
+no parallel magic globals like $prog_rc, $error_msg
+
+cleaner evolution later
+
+more explicit probing of what is actually present
+
+That is a good design.
+
+Proposed model
+After run ..., $rc becomes an object with some of these fields:
+
+Success case
+Program launched and exited normally:
+
+$rc.run = 0
+$rc.prog = <program-exit-code>
+Optional:
+
+$rc.kind = "ok"
+Not found
+$rc.run = 1
+$rc.err = <error-code>
+$rc.msg = "binary not found"
+Optional:
+
+$rc.kind = "not-found"
+Crash / abnormal termination
+$rc.run = 2
+$rc.err = <trap-or-abort-code-if-known>
+$rc.msg = "abnormal termination"
+Exec/loader failure
+$rc.run = 3
+$rc.err = <loader-error-code>
+$rc.msg = "bad executable format"
+So the object shape varies by outcome.
+
+Naming tweak
+I would not use $rc.rc.
+
+That is too repetitive and unclear.
+
+Use clearer field names.
+
+Better field names
+$rc.run = status of the run builtin
+
+$rc.prog = child program exit code, when normal exit happened
+
+$rc.err = detailed error code, when failure happened
+
+$rc.msg = human-readable message
+
+optional $rc.kind = category string
+
+So your pseudocode becomes more readable.
+
+How scripts would look
+Minimal form
+pragma run-rc on
+
+run something
+
+if {exists? $rc.prog} {
+    if {eq $rc.prog 0} {
+        echo success
+    }
+} else if {exists? $rc.err} {
+    echo $rc.err
+    echo $rc.msg
+}
+That is already much better than juggling several ambient variables.
+
+Even better pattern
+Use the top-level run code first.
+
+pragma run-rc on
+
+run something
+
+if {eq $rc.run 0} {
+    if {eq $rc.prog 0} {
+        echo success
+    } else {
+        echo program returned nonzero
+    }
+} else {
+    echo $rc.err
+    echo $rc.msg
+}
+This is probably the clearest core style.
+
+Because:
+
+$rc.run == 0 means the child ran and exited normally
+
+only then is $rc.prog meaningful
+
+Do you need exists?
+Yes, but I would make it general-purpose.
+
+Suggested command
+exists? expr
+where expr can be:
+
+a variable
+
+a field access
+
+maybe later a filesystem path test is a different command
+
+Example:
+
+exists? $rc.prog
+exists? $foo
+exists? $rc.msg
+That is useful.
+
+But I would keep filesystem existence separate, maybe:
+
+path-exists path
+or
+
+exists-path path
+
+Otherwise exists? will become overloaded between variables/fields and files.
+
+So:
+
+Good split
+exists? $rc.prog → field/variable existence
+
+fexists path/to/file or path-exists path → filesystem existence
+
+About $it in your pseudocode
+I would avoid implicit $it here.
+
+Your example:
+
+if exists? $rc.rc && eq $it 0
+introduces another hidden variable. That pulls you back toward ambient magic again.
+
+Instead, allow direct field access in expressions:
+
+if {and (exists? $rc.run) (eq $rc.run 0)} {
+    ...
+}
+or simpler, if field access to a missing field is itself falsey or an error depending on context.
+
+But for v0, explicit is better.
+
+So I would not introduce $it.
+
+Recommended field schema
+Here is a clean v0 shape.
+
+Always present after run
+These fields always exist once $rc has been set by a run:
+
+$rc.run — integer, status of run
+
+Present on normal child exit
+$rc.prog — integer, child exit code
+
+Present on abnormal/failure cases
+$rc.err — integer error detail
+
+$rc.msg — string explanation
+
+Optional but nice
+$rc.kind — short string category
+
+Examples:
+
+Child exited 7
+$rc.run  = 0
+$rc.prog = 7
+$rc.kind = "ok"
+Not found
+$rc.run  = 1
+$rc.err  = 101
+$rc.msg  = "binary not found"
+$rc.kind = "not-found"
+Crashed
+$rc.run  = 2
+$rc.err  = 202
+$rc.msg  = "abnormal termination"
+$rc.kind = "crash"
+Bad format
+$rc.run  = 3
+$rc.err  = 301
+$rc.msg  = "bad executable format"
+$rc.kind = "exec-failure"
+Why this is better than multiple implicit variables
+Pros
+single ambient variable
+
+extensible without adding more top-level names
+
+natural fit for future objects/maps/records
+
+keeps run results grouped together
+
+good for debugging / introspection
+
+Cons
+requires field-access syntax
+
+requires object/record runtime support earlier
+
+I think that cost is worth it.
+
+Implementation strategy
+You do not need full general objects for v0.
+
+You can special-case this initially.
+
+Internally
+Represent $rc as a tiny record/map:
+
+struct RcRecord {
+    run: i32,
+    prog: Option<i32>,
+    err: Option<i32>,
+    msg: Option<String>,
+    kind: Option<String>,
+}
+Store it in the variable table as a special value kind:
+
+enum Value {
+    Int(i32),
+    Str(String),
+    Record(BTreeMap<String, Value>),
+}
+Then field lookup supports:
+
+$rc.run
+$rc.prog
+$rc.err
+$rc.msg
+That is enough.
+
+Syntax suggestion
+Variable field access
+Use:
+
+$rc.run
+$rc.prog
+That is intuitive.
+
+Existence check
+Use:
+
+exists? $rc.prog
+exists? $rc.err
+Expressions
+Keep explicit comparisons:
+
+if {eq $rc.run 0} {
+    ...
+}
+and:
+
+if {and (eq $rc.run 0) (eq $rc.prog 0)} {
+    ...
+}
+If you do not want parentheses yet, keep command-style blocks, for example:
+
+if {eq $rc.run 0} {
+    if {eq $rc.prog 0} {
+        echo success
+    }
+}
+Suggested semantics for missing fields
+A key choice: what happens on $rc.prog when it does not exist?
+
+Best rule
+Direct access to a missing field is a runtime error.
+
+So users should write:
+
+if {exists? $rc.prog} {
+    ...
+}
+That is precise and keeps errors visible.
+
+Do not silently coerce missing fields to zero or empty string.
+
+Refined example
+Here is a cleaned-up version of your pseudocode in a likely sws style:
+
+pragma run-rc on
+
+run something
+
+if {eq $rc.run 0} {
+    if {eq $rc.prog 0} {
+        echo success
+    } else {
+        echo program returned nonzero
+    }
+} else {
+    if {exists? $rc.err} {
+        echo $rc.err
+    }
+    if {exists? $rc.msg} {
+        echo $rc.msg
+    }
+}
+This is clear and regular.
+
+Small refinement: maybe ok?
+You may later want helper predicates:
+
+ok? $rc meaning $rc.run == 0
+
+prog-ok? $rc meaning $rc.run == 0 && $rc.prog == 0
+
+But for v0 I would keep it explicit.
+
+Final recommendation
+Yes:
+
+support pragma run-rc on
+
+have it create/update a single structured $rc
+
+use fields like:
+
+$rc.run
+
+$rc.prog
+
+$rc.err
+
+$rc.msg
+
+make missing fields testable via:
+
+exists? $rc.prog
+
+Best field names
+I recommend:
+
+$rc.run
+$rc.prog
+$rc.err
+$rc.msg
+not $rc.rc.
+
+That gives you a compact, extensible, clean result model without spreading hidden state all over the language.
+
+The next step is to lock down the exact v0 syntax for:
+
+field access
+
+exists?
+
+set
+
+if
+
+run
+
+blocks and quoting
+
+
+okay let's start with a simple proof of concept (v0).  Can we plan for future add-ons, like a try/catch/finally construct to catch things like dereferencing an undefined value and "handling" it (probably just a script failed message)?
+
+Yes. You should plan for it now, but not implement full exceptions in v0.
+
+That is the right balance.
+
+Recommendation
+For sw-cor24-script / sws v0:
+
+implement a small, explicit interpreter error model
+
+make certain failures be script errors
+
+terminate the script with a clear message
+
+shape the runtime so a future try/catch/finally can wrap the same failure mechanism later
+
+So the goal is:
+
+v0: fail fast, with structured internal error information
+
+v1+: add script-level handlers around that mechanism
+
+1. High-level design
+You now have two kinds of outcomes in the language:
+
+A. Ordinary command results
+These are normal values.
+
+Examples:
+
+run foo returning a structured $rc
+
+exists? $rc.prog returning 0/1
+
+pwd returning a string
+
+set x 3 returning a success-ish value or assigned value
+
+These are not exceptions.
+
+B. Script/runtime errors
+These are interpreter failures.
+
+Examples:
+
+dereferencing an undefined variable
+
+dereferencing a missing field like $rc.prog when absent
+
+malformed syntax
+
+wrong argument count
+
+unknown command
+
+type mismatch
+
+invalid block structure
+
+These should not be ordinary values in v0.
+
+These should abort the script.
+
+That split is very important.
+
+2. What v0 should do
+For v0, define this rule:
+
+A script runtime error stops execution immediately and reports a structured error.
+
+So:
+
+echo $missing
+should do something like:
+
+script failed: undefined variable: missing
+and stop.
+
+Likewise:
+
+echo $rc.prog
+when $rc.prog does not exist should fail and stop.
+
+That gives you clean semantics and keeps the interpreter simple.
+
+3. How to plan for future try/catch/finally
+You want the internal execution engine to already distinguish:
+
+normal value
+
+script/runtime error
+
+In Rust terms, every evaluation step should already look conceptually like:
+
+Result<Value, ScriptError>
+Even if the script language itself has no try yet.
+
+That way later you can implement:
+
+try { ... } catch { ... }
+
+or try { ... } catch err { ... } finally { ... }
+
+without redesigning the evaluator.
+
+Internal model
+Something like:
+
+type EvalResult = Result<Value, ScriptError>;
+where ScriptError contains structured info.
+
+That is the future-proofing you want.
+
+4. Suggested v0 error categories
+You do not need a full exception hierarchy, but you should define categories now.
+
+Proposed categories
+UndefinedVariable
+
+UndefinedField
+
+UnknownCommand
+
+WrongArity
+
+TypeError
+
+SyntaxError
+
+RunError only if the run builtin itself is used incorrectly
+
+InternalError
+
+Examples:
+
+Undefined variable
+echo $foo
+Undefined field
+echo $rc.prog
+when $rc.prog is absent
+
+Wrong arity
+set x
+Unknown command
+frobnicate 1 2 3
+Type error
+eq hello {a b}
+if you later enforce types more strongly
+
+5. Proposed internal error struct
+Keep it small but structured.
+
+For example:
+
+struct ScriptError {
+    kind: ScriptErrorKind,
+    code: i32,
+    message: String,
+    line: Option<usize>,
+    column: Option<usize>,
+}
+And:
+
+enum ScriptErrorKind {
+    UndefinedVariable,
+    UndefinedField,
+    UnknownCommand,
+    WrongArity,
+    TypeError,
+    SyntaxError,
+    InternalError,
+}
+This is enough for:
+
+good failure messages now
+
+future catch objects later
+
+6. What the future script-level construct might look like
+You do not need to settle this now, but you can reserve a direction.
+
+Option A: Tcl-ish
+try {
+    echo $foo
+} catch err {
+    echo "script failed"
+} finally {
+    echo "cleanup"
+}
+Option B: simpler
+try {
+    echo $foo
+} catch {
+    echo "script failed"
+}
+Option C: catch command
+catch {
+    echo $foo
+} err
+For your language, I think a command/block form is better than a special syntax form, because it matches the Tcl-like direction.
+
+But v0 does not need any of this yet.
+
+7. What to reserve now
+You should reserve these words now so user scripts do not rely on them as identifiers later:
+
+try
+
+catch
+
+finally
+
+maybe throw
+
+Even if unimplemented.
+
+That avoids future compatibility pain.
+
+8. Suggested v0 behavior of undefined values
+This is important because it affects your exists? model.
+
+Recommended rule
+Direct access to undefined variable or field
+Runtime error.
+
+Examples:
+
+echo $foo
+echo $rc.prog
+when not defined
+
+exists?
+Safe probe; never throws for missing variable/field.
+
+Examples:
+
+exists? $foo
+exists? $rc.prog
+This should return:
+
+1 if present
+
+0 if absent
+
+That gives you the right style:
+
+if {exists? $rc.prog} {
+    echo $rc.prog
+}
+This is already a nice precursor to future exception handling.
+
+9. Recommended v0 control style
+For proof of concept, use this approach:
+
+Ordinary failure handling
+Use values.
+
+Example:
+
+pragma run-rc on
+run foo
+
+if {eq $rc.run 0} {
+    echo launched successfully
+} else {
+    echo $rc.msg
+}
+Script safety handling
+Use exists? before dereferencing optional fields.
+
+Example:
+
+if {exists? $rc.err} {
+    echo $rc.err
+}
+Runtime interpreter failures
+Abort script with structured message.
+
+Example:
+
+script failed at line 12: undefined field rc.prog
+That is enough for v0.
+
+10. Why not implement try/catch/finally now
+Because it expands scope significantly.
+
+You would need to define:
+
+what kinds of failures are catchable
+
+whether run ordinary failures are exceptions or values
+
+scope of the caught error variable
+
+interaction with return, break, exit
+
+what finally does on nested failures
+
+whether cleanup failures replace or chain earlier failures
+
+That is too much for proof-of-concept phase.
+
+So plan for it, yes. Implement it, no.
+
+11. Concrete v0 execution contract
+Here is a clean proof-of-concept contract.
+
+Values
+int
+
+string
+
+record/object for $rc
+
+Optional/conditional presence
+variables may be absent
+
+record fields may be absent
+
+Safe probe
+exists? expr returns 1 or 0
+
+Unsafe direct dereference
+reading absent variable/field is a script error
+
+Ordinary command failures
+represented as values where appropriate
+
+especially for run
+
+Interpreter/runtime failures
+become ScriptError
+
+terminate the script
+
+This is a very solid base.
+
+12. Rust-oriented implementation model
+Here is a good internal split.
+
+Values
+enum Value {
+    Int(i32),
+    Str(String),
+    Record(std::collections::BTreeMap<String, Value>),
+}
+Evaluation result
+type EvalResult = Result<Value, ScriptError>;
+Lookup API
+Use two forms internally:
+
+Safe probe
+fn probe_path(env: &Env, path: &VarPath) -> bool
+Strict fetch
+fn get_path(env: &Env, path: &VarPath) -> Result<Value, ScriptError>
+Then:
+
+exists? uses probe_path
+
+ordinary $foo / $rc.msg expansion uses get_path
+
+That cleanly sets you up for future try/catch.
+
+13. Recommended proof-of-concept language subset
+For v0, I would freeze this:
+
+Commands
+pragma run-rc on
+
+set
+
+echo
+
+if
+
+run
+
+exists?
+
+eq
+
+ne
+
+maybe exit
+
+Data model
+ints
+
+strings
+
+record for $rc
+
+Optional field semantics
+exists? safe
+
+direct access throws runtime error
+
+Error behavior
+abort script
+
+print structured failure message
+
+Reserved for later
+try
+
+catch
+
+finally
+
+throw
+
+14. Example v0 style
+pragma run-rc on
+
+run hello
+
+if {eq $rc.run 0} {
+    if {exists? $rc.prog} {
+        if {eq $rc.prog 0} {
+            echo success
+        } else {
+            echo program returned nonzero
+        }
+    }
+} else {
+    if {exists? $rc.msg} {
+        echo $rc.msg
+    }
+}
+And this should fail:
+
+echo $missing
+with a clear script error.
+
+15. Final recommendation
+Yes — plan for future try/catch/finally now by making the evaluator internally return structured errors, but keep v0 simple:
+
+missing variable/field dereference = runtime script error
+
+exists? = safe presence test
+
+run ordinary failures = structured value in $rc
+
+script errors abort execution with a clear message
+
+reserve try, catch, finally for later
+
+That gives you a clean proof of concept without painting yourself into a corner.
+
+I can next turn this into a compact sws v0 spec with syntax, semantics, reserved words, and example scripts.
+
+
+how can a nested script call return a result (0 for good)?  how does a script run another script (not a binary)? would it be ... run sws <script> ... and would sws get the result from an exit or return statement explicitly or infer 0 on non-crash exit?
+
+You’re now defining the process model, script invocation model, and script completion semantics. Those need to be nailed down early because they affect:
+
+run
+
+source or equivalent
+
+exit
+
+future return
+
+how sws composes with itself
+
+how shell scripts call other scripts
+
+Recommendation in one sentence
+Use two distinct mechanisms:
+
+source file.sws = run another script in the same interpreter
+
+run sws file.sws = run another script in a new process/interpreter
+
+And define script completion like this:
+
+exit N sets the script/program exit code to N
+
+reaching end-of-script without exit means exit code 0
+
+runtime/script error means nonzero failure chosen by the interpreter
+
+future return is for procedures/functions, not top-level script termination
+
+That is the cleanest model.
+
+1. Two different use-cases must stay separate
+There are really two very different operations.
+
+A. Run another script as a child process
+Like a binary.
+
+Example:
+
+run sws build.sws
+This should behave like launching any other command.
+
+Properties
+new interpreter instance
+
+separate variable scope
+
+separate $rc
+
+separate current control flow
+
+parent only sees child process result
+
+This is analogous to:
+
+shell script running another shell script as a command
+
+B. Include/evaluate another script in the same interpreter
+Like loading a file.
+
+Example:
+
+source build-lib.sws
+Properties
+same interpreter instance
+
+shared variables unless later scoped
+
+no process boundary
+
+useful for libraries, initialization, reusable definitions
+
+This is analogous to:
+
+shell source
+
+Tcl source
+
+Lisp load
+
+You want both eventually. For v0, source is probably more important than nested run sws.
+
+2. Should a script run another script via run sws <script>?
+Yes
+That should be valid and natural.
+
+If sws is just another executable command, then:
+
+run sws child.sws
+is the correct way to spawn a child script interpreter.
+
+That gives you nice uniformity:
+
+run foo
+
+run cc hello.c
+
+run sws child.sws
+
+All use the same mechanism.
+
+Why this is good
+no special case in run
+
+scripts are just programs
+
+self-hosting composition works naturally
+
+easy mental model
+
+3. How should a nested script return a result?
+You need to distinguish script exit code from function return value.
+
+Top-level script
+A top-level script should end with a process/script exit code, not a general value.
+
+That means the child sws process returns an integer result to the parent.
+
+Recommendation
+For top-level script execution:
+
+exit N → explicit script exit code N
+
+reaching EOF with no error → exit code 0
+
+runtime/script error → interpreter-defined nonzero exit code
+
+This is the right model.
+
+4. Should sws infer 0 on non-crash exit?
+Yes
+Absolutely.
+
+If a script reaches the end normally, that should mean:
+
+exit code = 0
+That is the standard and most useful rule.
+
+So:
+
+echo hello
+as a script should complete with exit code 0 unless something failed.
+
+5. Should return exist at top level?
+I recommend: no, not in v0
+Reserve return for future procedures/functions only.
+
+Why
+If you allow return at top level, then you create ambiguity:
+
+is it a script exit?
+
+is it a function return?
+
+does it return a value or an exit code?
+
+what happens if a sourced file uses it?
+
+That gets messy fast.
+
+Better rule
+exit N = terminate script/program with exit code
+
+return X = future feature, only valid inside proc/function bodies
+
+For now:
+
+reserve the word return
+
+do not implement it yet
+
+6. How does run see the child sws result?
+Using your structured $rc model:
+
+If child script is run as:
+
+run sws child.sws
+and child does:
+
+exit 7
+then parent should get:
+
+$rc.run  = 0
+$rc.prog = 7
+because:
+
+run itself succeeded
+
+the child program (sws) exited normally with code 7
+
+If the child script instead ends normally without exit, parent gets:
+
+$rc.run  = 0
+$rc.prog = 0
+If the child script has a runtime error and the sws interpreter exits with, say, 100, then parent gets:
+
+$rc.run  = 0
+$rc.prog = 100
+because the program still ran and exited normally from the OS/process standpoint.
+
+That is important.
+
+7. Distinguish “script failed” from “run failed”
+This is subtle but very important.
+
+Case 1: run failed
+Examples:
+
+executable not found
+
+loader failure
+
+permission denied
+
+Then:
+
+$rc.run != 0
+$rc.prog absent
+Case 2: child sws executed, but the script inside had an error
+Then the child interpreter should still return some normal program exit code, for example 100.
+
+Then:
+
+$rc.run  = 0
+$rc.prog = 100
+because from the parent’s perspective:
+
+the program launched fine
+
+the child program itself reported failure
+
+This is the right layering.
+
+8. What exit code should sws use for interpreter/script errors?
+Pick a small policy now.
+
+Recommendation
+Define:
+
+0 = normal script success
+
+1..63 = script-chosen exit codes via exit
+
+100 = script runtime error / evaluation failure
+
+101 = syntax/parse error
+
+maybe 102 = internal interpreter error
+
+You do not need many right now.
+
+Minimal v0
+0 = normal success
+
+100 = runtime/script failure
+
+101 = parse/syntax failure
+
+That is enough.
+
+Then if child script dereferences an undefined variable, parent sees:
+
+$rc.run  = 0
+$rc.prog = 100
+which is consistent.
+
+9. What should source return?
+This is a separate but related question.
+
+Recommendation
+source file.sws should execute the file in the same interpreter and return:
+
+0 on successful completion
+
+a script/runtime error if the sourced file fails
+
+Why not return child-like exit codes?
+Because source is not a child process. It is an in-process inclusion/evaluation.
+
+So for v0:
+
+successful source → returns 0
+
+runtime error in sourced file → propagates as script error and aborts unless future try/catch handles it
+
+That is simple.
+
+10. Proposed command set semantics
+run prog args...
+Launch child process.
+
+Returns run status object/value as already discussed.
+
+With pragma enabled:
+
+$rc.run = status of run
+
+$rc.prog = child exit code when normal launch/exit happened
+
+source file.sws
+Interpret file in current interpreter context.
+
+Returns:
+
+0 on success
+
+Fails with script error if:
+
+file missing
+
+parse error
+
+runtime error in sourced script
+
+Later, if you add try/catch, callers can trap those.
+
+11. Example flows
+Child script as process
+parent.sws
+pragma run-rc on
+
+run sws child.sws
+
+if {eq $rc.run 0} {
+    if {eq $rc.prog 0} {
+        echo child ok
+    } else {
+        echo child script failed
+    }
+} else {
+    echo could not launch sws
+}
+child.sws
+echo hello
+exit 7
+Parent sees:
+
+$rc.run  = 0
+$rc.prog = 7
+Child script ends naturally
+child.sws
+echo hello
+Parent sees:
+
+$rc.run  = 0
+$rc.prog = 0
+Child script has runtime error
+child.sws
+echo $missing
+Interpreter prints error and exits with, say, 100.
+
+Parent sees:
+
+$rc.run  = 0
+$rc.prog = 100
+Source another script
+main.sws
+source lib.sws
+echo done
+lib.sws
+echo loaded
+Returns 0 from source, stays in same interpreter.
+
+12. Future interaction with return
+Later, when you add procedures:
+
+proc build {} {
+    if {ne (run cc hello.c) 0} {
+        return 1
+    }
+    return 0
+}
+Then:
+
+return exits a proc/function with a value
+
+exit exits the script/interpreter with a process code
+
+That separation is worth preserving from the beginning.
+
+13. My recommended v0 rules
+Top-level script completion
+end of file without error → exit code 0
+
+exit N → exit code N
+
+parse/runtime error → interpreter exits with fixed nonzero code like 100 or 101
+
+Running another script as child process
+Use:
+
+run sws file.sws
+Result:
+
+if sws launches, $rc.run = 0
+
+$rc.prog = child_sws_exit_code
+
+Running another script in-process
+Use:
+
+source file.sws
+Result:
+
+returns 0 on success
+
+errors propagate as script errors
+
+return
+reserved for future
+
+not implemented in v0
+
+not valid at top level
+
+14. Final recommendation
+Yes:
+
+a script should run another script as a child with run sws script.sws
+
+sws should return:
+
+explicit exit N if present
+
+otherwise 0 on normal completion
+
+fixed nonzero interpreter error code on parse/runtime failure
+
+separate that from source file.sws, which runs in the same interpreter and returns success/error in-process
+
+That gives you a clean model now and a solid foundation for future procs, returns, and try/catch.
+
+I can next turn this into a compact sws v0 execution model spec with exact return/exit rules for run, source, exit, future return, and $rc.
+
+
+
+
