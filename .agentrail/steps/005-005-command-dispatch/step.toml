@@ -1,6 +1,6 @@
 number = 5
 slug = "005-command-dispatch"
-status = "pending"
+status = "in-progress"
 description = """
 Implement command table and dispatch loop for sws.
 

@@ -37,32 +37,32 @@ echo "=== Testing sws tokenizer ==="
 run_test "banner" "\x04" "sws 0.1"
 
 # Bare words (use unknown command to trigger debug token dump)
-run_test "bare words" "foo hello world\n\x04" \
-    "[WORD|foo] [WORD|hello] [WORD|world]"
+run_test "bare words" "_toktest hello world\n\x04" \
+    "[WORD|_toktest] [WORD|hello] [WORD|world]"
 
 # Quoted string (unknown command to see tokens)
-run_test "quoted string" 'foo x "hello world"\n\x04' \
-    "[WORD|foo] [WORD|x] [QUOTED|hello world]"
+run_test "quoted string" '_toktest x "hello world"\n\x04' \
+    "[WORD|_toktest] [WORD|x] [QUOTED|hello world]"
 
 # Brace block
-run_test "brace block" "foo cond { echo yes }\n\x04" \
-    "[WORD|foo] [WORD|cond] [BLOCK|{ echo yes }]"
+run_test "brace block" "_toktest cond { echo yes }\n\x04" \
+    "[WORD|_toktest] [WORD|cond] [BLOCK|{ echo yes }]"
 
 # Comment stripping
-run_test "comment stripping" "foo test # comment\n\x04" \
-    "[WORD|foo] [WORD|test]"
+run_test "comment stripping" "_toktest test # comment\n\x04" \
+    "[WORD|_toktest] [WORD|test]"
 
 # Comment-only line (no token output, just prompt)
-run_test "comment-only line" "# just a comment\nfoo ok\n\x04" \
-    "[WORD|foo] [WORD|ok]"
+run_test "comment-only line" "# just a comment\n_toktest ok\n\x04" \
+    "[WORD|_toktest] [WORD|ok]"
 
 # Multiple spaces
-run_test "multiple spaces" "foo    hello\n\x04" \
-    "[WORD|foo] [WORD|hello]"
+run_test "multiple spaces" "_toktest    hello\n\x04" \
+    "[WORD|_toktest] [WORD|hello]"
 
 # Nested braces
-run_test "nested braces" "foo cond { if inner { echo yes } }\n\x04" \
-    "[WORD|foo] [WORD|cond] [BLOCK|{ if inner { echo yes } }]"
+run_test "nested braces" "_toktest cond { if inner { echo yes } }\n\x04" \
+    "[WORD|_toktest] [WORD|cond] [BLOCK|{ if inner { echo yes } }]"
 
 echo ""
 echo "=== Testing sws value types ==="
@@ -122,6 +122,31 @@ run_test "undef var error" "echo \$nope\n\x04" "error: undefined variable: nope"
 
 # echo multiple args
 run_test "echo multi" "set a hello\nset b world\necho \$a \$b\n\x04" "hello world"
+
+echo ""
+echo "=== Testing sws command dispatch ==="
+
+# Unknown command error
+run_test "unknown command" "frobnicate\n\x04" "error: unknown command: frobnicate"
+
+# exit command
+run_test "exit halts" "echo before\nexit\necho after\n\x04" "before"
+# Verify "after" does NOT appear (exit should stop execution)
+OUTPUT=$("$COR24_RUN" --run "$ASM" -u "echo before\nexit\necho after\n\x04" -t 5 2>&1)
+if echo "$OUTPUT" | grep -qF "after"; then
+    echo "FAIL: exit stops execution"
+    echo "  Got 'after' in output — exit did not halt"
+    FAIL=$((FAIL + 1))
+else
+    echo "PASS: exit stops execution"
+    PASS=$((PASS + 1))
+fi
+
+# set error with missing args
+run_test "set missing args" "set x\n\x04" "error: set: expected 2 args, got 1"
+
+# Prompt shows sws>
+run_test "prompt" "\x04" "sws>"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

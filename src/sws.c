@@ -721,6 +721,95 @@ int val_from_str(char *s) {
     return val_new_str(s);
 }
 
+/* ---- Command dispatch table ---- */
+
+#define MAX_CMDS      16
+#define MAX_CMD_NAME  16
+#define CMD_NAME_POOL_SIZE 256  /* 16 * 16 */
+
+char cmd_name_pool[CMD_NAME_POOL_SIZE];
+int  cmd_handler[MAX_CMDS];  /* function pointers stored as int (24-bit = ptr size) */
+int  cmd_count;
+
+/* Get pointer to command name */
+char *cmd_name(int idx) {
+    return cmd_name_pool + idx * MAX_CMD_NAME;
+}
+
+/* Register a command. Handler is a function pointer stored as int
+ * (on COR24, pointers and ints are both 24-bit). */
+int cmd_register(char *name, int handler) {
+    if (cmd_count >= MAX_CMDS) return -1;
+    char *dst = cmd_name(cmd_count);
+    int i = 0;
+    while (name[i] && i < MAX_CMD_NAME - 1) {
+        dst[i] = name[i];
+        i = i + 1;
+    }
+    dst[i] = 0;
+    cmd_handler[cmd_count] = handler;
+    cmd_count = cmd_count + 1;
+    return 0;
+}
+
+/* Look up command by name. Returns index, or -1 if not found. */
+int cmd_find(char *name) {
+    int i = 0;
+    while (i < cmd_count) {
+        if (str_eq(cmd_name(i), name)) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+/* ---- Built-in command handlers ---- */
+
+/* All handlers access expanded tokens via exp_str()/expand_count.
+ * Return 0 on success, -1 on error. */
+
+int cmd_echo() {
+    int j = 1;
+    while (j < expand_count) {
+        if (j > 1) uart_putc(32);
+        uart_puts(exp_str(j));
+        j = j + 1;
+    }
+    uart_newline();
+    return 0;
+}
+
+int cmd_set() {
+    if (expand_count < 3) {
+        uart_puts("error: set: expected 2 args, got ");
+        uart_putint(expand_count - 1);
+        uart_newline();
+        return -1;
+    }
+    char *name = exp_str(1);
+    char *val_s = exp_str(2);
+    int vi = val_from_str(val_s);
+    if (vi < 0) {
+        uart_puts("error: value overflow");
+        uart_newline();
+        return -1;
+    }
+    env_set(name, vi);
+    return 0;
+}
+
+/* Exit flag — checked by main loop */
+int exit_flag;
+int exit_code;
+
+int cmd_exit() {
+    exit_flag = 1;
+    exit_code = 0;
+    if (expand_count >= 2) {
+        exit_code = str_to_int(exp_str(1));
+    }
+    return 0;
+}
+
 /* ---- Input buffer ---- */
 
 char line_buf[MAX_LINE_LEN];
@@ -792,15 +881,117 @@ int check_exists(char *tok) {
     return val_rec_has(vi, fname);
 }
 
+/* ---- _toktest handler (debug: dump tokens) ---- */
+
+int cmd_toktest() {
+    /* Print expanded tokens in debug format */
+    int j = 0;
+    while (j < expand_count) {
+        uart_puts("[");
+        uart_puts(tok_type_name(token_type[j]));
+        uart_puts("|");
+        uart_puts(exp_str(j));
+        uart_puts("]");
+        if (j < expand_count - 1) uart_putc(32);
+        j = j + 1;
+    }
+    uart_newline();
+    return 0;
+}
+
+/* ---- _valtest handler (debug/testing) ---- */
+
+int cmd_valtest() {
+    val_reset();
+
+    /* Integer values */
+    int v0 = val_new_int(42);
+    int v1 = val_new_int(0);
+    int v2 = val_new_int(-7);
+
+    /* String values */
+    int v3 = val_new_str("hello");
+    int v4 = val_new_str("");
+
+    /* Record with fields */
+    int v5 = val_new_rec();
+    int fn_status = val_new_str("status");
+    int fv_status = val_new_int(0);
+    int fn_output = val_new_str("output");
+    int fv_output = val_new_str("ok");
+    val_rec_set(v5, fn_status, fv_status);
+    val_rec_set(v5, fn_output, fv_output);
+
+    /* Print each value */
+    uart_puts("int:"); val_print(v0); uart_newline();
+    uart_puts("zero:"); val_print(v1); uart_newline();
+    uart_puts("neg:"); val_print(v2); uart_newline();
+    uart_puts("str:"); val_print(v3); uart_newline();
+    uart_puts("empty:"); val_print(v4); uart_newline();
+    uart_puts("rec:"); val_print(v5); uart_newline();
+
+    /* Equality tests */
+    int v6 = val_new_int(42);
+    uart_puts("eq:"); uart_putint(val_eq(v0, v6)); uart_newline();
+    uart_puts("ne:"); uart_putint(val_eq(v0, v1)); uart_newline();
+
+    /* Truthiness */
+    uart_puts("truthy42:"); uart_putint(val_is_truthy(v0)); uart_newline();
+    uart_puts("truthy0:"); uart_putint(val_is_truthy(v1)); uart_newline();
+    uart_puts("truthyS:"); uart_putint(val_is_truthy(v3)); uart_newline();
+    uart_puts("truthyE:"); uart_putint(val_is_truthy(v4)); uart_newline();
+    uart_puts("truthyR:"); uart_putint(val_is_truthy(v5)); uart_newline();
+
+    /* Record field access */
+    int got = val_rec_get(v5, "status");
+    uart_puts("field:"); val_print(got); uart_newline();
+    uart_puts("has:"); uart_putint(val_rec_has(v5, "output")); uart_newline();
+    uart_puts("miss:"); uart_putint(val_rec_has(v5, "nope")); uart_newline();
+
+    uart_puts("vals:"); uart_putint(val_count); uart_newline();
+    return 0;
+}
+
+/* ---- exists? handler (pre-expansion command) ---- */
+
+int cmd_exists() {
+    /* Uses raw tokens (before expansion) — token_str/token_count */
+    if (token_count < 2) {
+        uart_puts("error: exists?: expected 1 arg, got 0");
+        uart_newline();
+        return -1;
+    }
+    uart_putint(check_exists(token_str(1)));
+    uart_newline();
+    return 0;
+}
+
+/* ---- Command registration ---- */
+
+void register_builtins() {
+    cmd_count = 0;
+    cmd_register("echo", cmd_echo);
+    cmd_register("set", cmd_set);
+    cmd_register("exit", cmd_exit);
+    cmd_register("exists?", cmd_exists);
+    cmd_register("_valtest", cmd_valtest);
+    cmd_register("_toktest", cmd_toktest);
+}
+
+/* ---- Main ---- */
+
 int main() {
     uart_puts("sws 0.1");
     uart_newline();
 
     val_reset();
     env_reset();
+    exit_flag = 0;
+    exit_code = 0;
+    register_builtins();
 
-    while (1) {
-        uart_puts("> ");
+    while (!exit_flag) {
+        uart_puts("sws> ");
         int len = read_line(line_buf, MAX_LINE_LEN);
         if (len < 0) break; /* EOF */
         if (len == 0) continue; /* empty line */
@@ -809,118 +1000,30 @@ int main() {
         if (count < 0) continue; /* syntax error already reported */
         if (count == 0) continue; /* blank or comment-only */
 
-        /* Built-in: _valtest — exercise value type system */
-        if (str_eq(token_str(0), "_valtest")) {
-            val_reset();
+        /* Look up command name in raw tokens */
+        char *name = token_str(0);
+        int ci = cmd_find(name);
 
-            /* Integer values */
-            int v0 = val_new_int(42);
-            int v1 = val_new_int(0);
-            int v2 = val_new_int(-7);
-
-            /* String values */
-            int v3 = val_new_str("hello");
-            int v4 = val_new_str("");
-
-            /* Record with fields */
-            int v5 = val_new_rec();
-            int fn_status = val_new_str("status");
-            int fv_status = val_new_int(0);
-            int fn_output = val_new_str("output");
-            int fv_output = val_new_str("ok");
-            val_rec_set(v5, fn_status, fv_status);
-            val_rec_set(v5, fn_output, fv_output);
-
-            /* Print each value */
-            uart_puts("int:"); val_print(v0); uart_newline();
-            uart_puts("zero:"); val_print(v1); uart_newline();
-            uart_puts("neg:"); val_print(v2); uart_newline();
-            uart_puts("str:"); val_print(v3); uart_newline();
-            uart_puts("empty:"); val_print(v4); uart_newline();
-            uart_puts("rec:"); val_print(v5); uart_newline();
-
-            /* Equality tests */
-            int v6 = val_new_int(42);
-            uart_puts("eq:"); uart_putint(val_eq(v0, v6)); uart_newline();
-            uart_puts("ne:"); uart_putint(val_eq(v0, v1)); uart_newline();
-
-            /* Truthiness */
-            uart_puts("truthy42:"); uart_putint(val_is_truthy(v0)); uart_newline();
-            uart_puts("truthy0:"); uart_putint(val_is_truthy(v1)); uart_newline();
-            uart_puts("truthyS:"); uart_putint(val_is_truthy(v3)); uart_newline();
-            uart_puts("truthyE:"); uart_putint(val_is_truthy(v4)); uart_newline();
-            uart_puts("truthyR:"); uart_putint(val_is_truthy(v5)); uart_newline();
-
-            /* Record field access */
-            int got = val_rec_get(v5, "status");
-            uart_puts("field:"); val_print(got); uart_newline();
-            uart_puts("has:"); uart_putint(val_rec_has(v5, "output")); uart_newline();
-            uart_puts("miss:"); uart_putint(val_rec_has(v5, "nope")); uart_newline();
-
-            uart_puts("vals:"); uart_putint(val_count); uart_newline();
+        if (ci < 0) {
+            uart_puts("error: unknown command: ");
+            uart_puts(name);
+            uart_newline();
             continue;
         }
 
-        /* exists? — must check BEFORE variable expansion (to avoid error on missing vars) */
-        if (str_eq(token_str(0), "exists?")) {
-            if (count < 2) {
-                uart_puts("error: exists? requires an argument");
-                uart_newline();
-                continue;
-            }
-            uart_putint(check_exists(token_str(1)));
-            uart_newline();
+        /* Pre-expansion commands: exists? operates on raw tokens */
+        if (str_eq(name, "exists?")) {
+            int (*fn)() = cmd_handler[ci];
+            fn();
             continue;
         }
 
         /* Expand variables in tokens */
-        if (expand_variables() < 0) continue; /* runtime error already reported */
+        if (expand_variables() < 0) continue;
 
-        /* --- Command dispatch --- */
-
-        /* set name value */
-        if (str_eq(exp_str(0), "set")) {
-            if (expand_count < 3) {
-                uart_puts("error: set requires name and value");
-                uart_newline();
-                continue;
-            }
-            char *name = exp_str(1);
-            char *val_s = exp_str(2);
-            int vi = val_from_str(val_s);
-            if (vi < 0) {
-                uart_puts("error: value overflow");
-                uart_newline();
-                continue;
-            }
-            env_set(name, vi);
-            continue;
-        }
-
-        /* echo args... */
-        if (str_eq(exp_str(0), "echo")) {
-            int j = 1;
-            while (j < expand_count) {
-                if (j > 1) uart_putc(32); /* space */
-                uart_puts(exp_str(j));
-                j = j + 1;
-            }
-            uart_newline();
-            continue;
-        }
-
-        /* Debug: echo tokens (for unrecognized commands) */
-        int j = 0;
-        while (j < expand_count) {
-            uart_puts("[");
-            uart_puts(tok_type_name(token_type[j]));
-            uart_puts("|");
-            uart_puts(exp_str(j));
-            uart_puts("]");
-            if (j < expand_count - 1) uart_putc(32); /* space */
-            j = j + 1;
-        }
-        uart_newline();
+        /* Dispatch to handler */
+        int (*fn)() = cmd_handler[ci];
+        fn();
     }
 
     halt();

@@ -1,0 +1,1 @@
+Implemented variable environment with parallel arrays (flat name pool), env_set/get/has/unset operations,  and .field substitution in token expansion, set/echo/exists? commands, auto int/string value detection, and runtime error reporting. Updated tests (34 pass). Blocks are deferred (not expanded).
