@@ -185,6 +185,63 @@ run_test "pragma run-rc off" "pragma run-rc off\n\x04" "error: unknown pragma: r
 run_test "run no args" "pragma run-rc on\nrun\n\x04" "error: run: expected program name"
 
 echo ""
+echo "=== Testing sws filesystem commands ==="
+
+# pwd — prints current directory (initialized to /)
+run_test "pwd initial" "pwd\n\x04" "/"
+
+# cd and pwd
+run_test "cd then pwd" "cd /tmp\npwd\n\x04" "/tmp"
+
+# cd absolute path
+run_test "cd absolute" "cd /usr/bin\npwd\n\x04" "/usr/bin"
+
+# cd relative path (appended to cwd)
+run_test "cd relative" "cd /home\ncd user\npwd\n\x04" "/home/user"
+
+# cd missing arg → error
+run_test "cd no args" "cd\n\x04" "error: cd: expected path argument"
+
+# ls stub → error
+run_test "ls stub" "ls\n\x04" "error: ls: filesystem not available"
+
+# mkdir stub → error
+run_test "mkdir stub" "mkdir /tmp/test\n\x04" "error: mkdir: filesystem not available"
+
+# mkdir no args → error
+run_test "mkdir no args" "mkdir\n\x04" "error: mkdir: expected path argument"
+
+# rm stub → error
+run_test "rm stub" "rm /tmp/file\n\x04" "error: rm: filesystem not available"
+
+# rm no args → error
+run_test "rm no args" "rm\n\x04" "error: rm: expected path argument"
+
+# mv stub → error
+run_test "mv stub" "mv /a /b\n\x04" "error: mv: filesystem not available"
+
+# mv missing args → error
+run_test "mv no args" "mv\n\x04" "error: mv: expected 2 args (src dst)"
+
+# cp stub → error
+run_test "cp stub" "cp /a /b\n\x04" "error: cp: filesystem not available"
+
+# cp missing args → error
+run_test "cp no args" "cp\n\x04" "error: cp: expected 2 args (src dst)"
+
+# stat stub → error
+run_test "stat stub" "stat /tmp\n\x04" "error: stat: filesystem not available"
+
+# stat no args → error
+run_test "stat no args" "stat\n\x04" "error: stat: expected path argument"
+
+# fexists stub → always 0
+run_test "fexists stub" "fexists /tmp\n\x04" "0"
+
+# fexists no args → error
+run_test "fexists no args" "fexists\n\x04" "error: fexists: expected path argument"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then

@@ -1,6 +1,6 @@
 number = 8
 slug = "008-filesystem-commands"
-status = "pending"
+status = "in-progress"
 description = """
 Implement filesystem commands for sws.
 

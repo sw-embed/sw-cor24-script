@@ -1419,6 +1419,246 @@ int cmd_run() {
     return RET_OK;
 }
 
+/* ---- Filesystem abstraction layer ---- */
+
+/* Current working directory buffer */
+#define MAX_PATH_LEN 256
+char fs_cwd[MAX_PATH_LEN];
+
+void fs_init() {
+    fs_cwd[0] = 47; /* '/' */
+    fs_cwd[1] = 0;
+}
+
+/* Path concatenation: join cwd and relative path into buf.
+ * If path starts with '/', it's absolute — copy directly.
+ * Otherwise, append to cwd. Returns buf. */
+char *fs_resolve(char *path, char *buf) {
+    if (path[0] == 47) { /* '/' — absolute */
+        str_copy(buf, path);
+        return buf;
+    }
+    /* Relative: cwd + '/' + path */
+    int i = 0;
+    while (fs_cwd[i] && i < MAX_PATH_LEN - 2) {
+        buf[i] = fs_cwd[i];
+        i = i + 1;
+    }
+    /* Add separator if cwd doesn't end with '/' */
+    if (i > 0 && buf[i - 1] != 47) {
+        buf[i] = 47;
+        i = i + 1;
+    }
+    int j = 0;
+    while (path[j] && i < MAX_PATH_LEN - 1) {
+        buf[i] = path[j];
+        i = i + 1;
+        j = j + 1;
+    }
+    buf[i] = 0;
+    return buf;
+}
+
+/* Stub filesystem operations.
+ * These return -1 (not available) until COR24 OS defines syscalls.
+ * When the OS is ready, replace these with actual syscall wrappers. */
+
+int fs_chdir(char *path) {
+    /* Stub: accept the path change (update cwd) but no OS validation */
+    char resolved[MAX_PATH_LEN];
+    fs_resolve(path, resolved);
+    str_copy(fs_cwd, resolved);
+    return 0;
+}
+
+int fs_getcwd(char *buf) {
+    str_copy(buf, fs_cwd);
+    return 0;
+}
+
+int fs_listdir(char *path) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_mkdir(char *path) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_remove(char *path) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_rename(char *src, char *dst) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_copy(char *src, char *dst) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_stat(char *path) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
+int fs_exists(char *path) {
+    /* Stub: filesystem not yet available — always returns 0 */
+    return 0;
+}
+
+/* ---- Filesystem command handlers ---- */
+
+int cmd_cd() {
+    if (expand_count < 2) {
+        uart_puts("error: cd: expected path argument");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *path = exp_str(1);
+    int r = fs_chdir(path);
+    if (r < 0) {
+        uart_puts("error: cd: no such directory: ");
+        uart_puts(path);
+        uart_newline();
+        return RET_ERR;
+    }
+    last_result = val_new_str(fs_cwd);
+    return RET_OK;
+}
+
+int cmd_pwd() {
+    char buf[MAX_PATH_LEN];
+    fs_getcwd(buf);
+    uart_puts(buf);
+    uart_newline();
+    last_result = val_new_str(buf);
+    return RET_OK;
+}
+
+int cmd_ls() {
+    char *path = fs_cwd;
+    char resolved[MAX_PATH_LEN];
+    if (expand_count >= 2) {
+        path = fs_resolve(exp_str(1), resolved);
+    }
+    int r = fs_listdir(path);
+    if (r < 0) {
+        uart_puts("error: ls: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_mkdir() {
+    if (expand_count < 2) {
+        uart_puts("error: mkdir: expected path argument");
+        uart_newline();
+        return RET_ERR;
+    }
+    char resolved[MAX_PATH_LEN];
+    char *path = fs_resolve(exp_str(1), resolved);
+    int r = fs_mkdir(path);
+    if (r < 0) {
+        uart_puts("error: mkdir: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_rm() {
+    if (expand_count < 2) {
+        uart_puts("error: rm: expected path argument");
+        uart_newline();
+        return RET_ERR;
+    }
+    char resolved[MAX_PATH_LEN];
+    char *path = fs_resolve(exp_str(1), resolved);
+    int r = fs_remove(path);
+    if (r < 0) {
+        uart_puts("error: rm: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_mv() {
+    if (expand_count < 3) {
+        uart_puts("error: mv: expected 2 args (src dst)");
+        uart_newline();
+        return RET_ERR;
+    }
+    char rsrc[MAX_PATH_LEN];
+    char rdst[MAX_PATH_LEN];
+    char *src = fs_resolve(exp_str(1), rsrc);
+    char *dst = fs_resolve(exp_str(2), rdst);
+    int r = fs_rename(src, dst);
+    if (r < 0) {
+        uart_puts("error: mv: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_cp() {
+    if (expand_count < 3) {
+        uart_puts("error: cp: expected 2 args (src dst)");
+        uart_newline();
+        return RET_ERR;
+    }
+    char rsrc[MAX_PATH_LEN];
+    char rdst[MAX_PATH_LEN];
+    char *src = fs_resolve(exp_str(1), rsrc);
+    char *dst = fs_resolve(exp_str(2), rdst);
+    int r = fs_copy(src, dst);
+    if (r < 0) {
+        uart_puts("error: cp: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_stat() {
+    if (expand_count < 2) {
+        uart_puts("error: stat: expected path argument");
+        uart_newline();
+        return RET_ERR;
+    }
+    char resolved[MAX_PATH_LEN];
+    char *path = fs_resolve(exp_str(1), resolved);
+    int r = fs_stat(path);
+    if (r < 0) {
+        uart_puts("error: stat: filesystem not available");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
+int cmd_fexists() {
+    if (expand_count < 2) {
+        uart_puts("error: fexists: expected path argument");
+        uart_newline();
+        return RET_ERR;
+    }
+    char resolved[MAX_PATH_LEN];
+    char *path = fs_resolve(exp_str(1), resolved);
+    int result = fs_exists(path);
+    last_result = val_new_int(result);
+    uart_putint(result);
+    uart_newline();
+    return RET_OK;
+}
+
 /* ---- Arithmetic helper: incr ---- */
 
 int cmd_incr() {
@@ -1478,6 +1718,16 @@ void register_builtins() {
     /* Pragma and run */
     cmd_register("pragma", cmd_pragma);
     cmd_register("run", cmd_run);
+    /* Filesystem commands */
+    cmd_register("cd", cmd_cd);
+    cmd_register("pwd", cmd_pwd);
+    cmd_register("ls", cmd_ls);
+    cmd_register("mkdir", cmd_mkdir);
+    cmd_register("rm", cmd_rm);
+    cmd_register("mv", cmd_mv);
+    cmd_register("cp", cmd_cp);
+    cmd_register("stat", cmd_stat);
+    cmd_register("fexists", cmd_fexists);
     /* Debug commands */
     cmd_register("_valtest", cmd_valtest);
     cmd_register("_toktest", cmd_toktest);
@@ -1491,6 +1741,7 @@ int main() {
 
     val_reset();
     env_reset();
+    fs_init();
     exit_flag = 0;
     exit_code = 0;
     pragma_run_rc = 0;
