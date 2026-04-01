@@ -810,6 +810,11 @@ int cmd_set() {
 int exit_flag;
 int exit_code;
 
+/* ---- Pragma flags ---- */
+
+int pragma_run_rc;  /* 0 = off (default), 1 = on */
+int rc_defined;     /* 0 = $rc not yet set, 1 = has been set by a run */
+
 int cmd_exit() {
     exit_flag = 1;
     exit_code = 0;
@@ -1323,6 +1328,97 @@ int cmd_continue_() {
     return RET_CONTINUE;
 }
 
+/* ---- Pragma command ---- */
+
+int cmd_pragma() {
+    if (expand_count != 3) {
+        uart_puts("error: pragma: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *key = exp_str(1);
+    char *val_s = exp_str(2);
+    if (str_eq(key, "run-rc") && str_eq(val_s, "on")) {
+        pragma_run_rc = 1;
+        return RET_OK;
+    }
+    uart_puts("error: unknown pragma: ");
+    uart_puts(key);
+    uart_putc(32);
+    uart_puts(val_s);
+    uart_newline();
+    return RET_ERR;
+}
+
+/* ---- Run command ---- */
+
+/* Build a structured $rc record and store it in the "rc" variable.
+ * run_code: 0=ok, 1=not-found, 2=crash, 3=exec-failure, 4=usage-error
+ * detail: prog exit code (run_code=0) or error code (others)
+ * msg: human-readable message (NULL for success case)
+ * kind: category string */
+int set_rc_record(int run_code, int detail, char *msg, char *kind) {
+    int rec = val_new_rec();
+    if (rec < 0) return -1;
+
+    /* $rc.run */
+    int fn_run = val_new_str("run");
+    int fv_run = val_new_int(run_code);
+    val_rec_set(rec, fn_run, fv_run);
+
+    /* $rc.kind */
+    int fn_kind = val_new_str("kind");
+    int fv_kind = val_new_str(kind);
+    val_rec_set(rec, fn_kind, fv_kind);
+
+    if (run_code == 0) {
+        /* Success: $rc.prog = detail */
+        int fn_prog = val_new_str("prog");
+        int fv_prog = val_new_int(detail);
+        val_rec_set(rec, fn_prog, fv_prog);
+    } else {
+        /* Failure: $rc.err and $rc.msg */
+        int fn_err = val_new_str("err");
+        int fv_err = val_new_int(detail);
+        val_rec_set(rec, fn_err, fv_err);
+        int fn_msg = val_new_str("msg");
+        int fv_msg = val_new_str(msg);
+        val_rec_set(rec, fn_msg, fv_msg);
+    }
+
+    env_set("rc", rec);
+    rc_defined = 1;
+    return 0;
+}
+
+int cmd_run() {
+    if (!pragma_run_rc) {
+        /* Without pragma, run still works but doesn't set $rc */
+    }
+
+    if (expand_count < 2) {
+        /* Usage error */
+        if (pragma_run_rc) {
+            set_rc_record(4, 0, "invalid run invocation", "usage-error");
+        }
+        uart_puts("error: run: expected program name");
+        uart_newline();
+        return RET_ERR;
+    }
+
+    /* For now, on COR24, process execution is not yet available.
+     * Simulate a "not found" result for any program.
+     * Future: use OS syscall to launch child binary. */
+
+    if (pragma_run_rc) {
+        set_rc_record(1, 1, "binary not found", "not-found");
+    }
+
+    /* The run command evaluates to $rc.run */
+    last_result = val_new_int(1); /* not-found */
+    return RET_OK;
+}
+
 /* ---- Arithmetic helper: incr ---- */
 
 int cmd_incr() {
@@ -1379,6 +1475,9 @@ void register_builtins() {
     cmd_register("break", cmd_break);
     cmd_register("continue", cmd_continue_);
     cmd_register("incr", cmd_incr);
+    /* Pragma and run */
+    cmd_register("pragma", cmd_pragma);
+    cmd_register("run", cmd_run);
     /* Debug commands */
     cmd_register("_valtest", cmd_valtest);
     cmd_register("_toktest", cmd_toktest);
@@ -1394,6 +1493,8 @@ int main() {
     env_reset();
     exit_flag = 0;
     exit_code = 0;
+    pragma_run_rc = 0;
+    rc_defined = 0;
     block_stack_top = 0;
     register_builtins();
 

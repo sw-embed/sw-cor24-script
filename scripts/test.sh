@@ -149,6 +149,42 @@ run_test "set missing args" "set x\n\x04" "error: set: expected 2 args, got 1"
 run_test "prompt" "\x04" "sws>"
 
 echo ""
+echo "=== Testing sws pragma and run ==="
+
+# pragma run-rc on enables $rc
+run_test "pragma run-rc on" "pragma run-rc on\nrun something\necho \$rc.run\n\x04" "1"
+
+# $rc.kind after not-found run
+run_test "rc.kind not-found" "pragma run-rc on\nrun something\necho \$rc.kind\n\x04" "not-found"
+
+# $rc.msg after not-found run
+run_test "rc.msg not-found" "pragma run-rc on\nrun something\necho \$rc.msg\n\x04" "binary not found"
+
+# $rc.err after not-found run
+run_test "rc.err not-found" "pragma run-rc on\nrun something\necho \$rc.err\n\x04" "1"
+
+# exists? $rc.err after not-found
+run_test "exists rc.err" "pragma run-rc on\nrun something\nexists? \$rc.err\n\x04" "1"
+
+# exists? $rc.prog after not-found (should be 0 — no prog field)
+run_test "no rc.prog on not-found" "pragma run-rc on\nrun something\nexists? \$rc.prog\n\x04" "0"
+
+# $rc without pragma → error
+run_test "rc without pragma" "echo \$rc\n\x04" "error: undefined variable: rc"
+
+# $rc with pragma but before run → error
+run_test "rc before run" "pragma run-rc on\necho \$rc\n\x04" "error: undefined variable: rc"
+
+# pragma with wrong args → error
+run_test "pragma bad args" "pragma run-rc\n\x04" "error: pragma: expected 2 args"
+
+# pragma run-rc off → error
+run_test "pragma run-rc off" "pragma run-rc off\n\x04" "error: unknown pragma: run-rc off"
+
+# run without args → usage error
+run_test "run no args" "pragma run-rc on\nrun\n\x04" "error: run: expected program name"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
