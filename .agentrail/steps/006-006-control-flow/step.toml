@@ -1,6 +1,6 @@
 number = 6
 slug = "006-control-flow"
-status = "pending"
+status = "in-progress"
 description = """
 Implement control flow commands for sws: if/else and while.
 

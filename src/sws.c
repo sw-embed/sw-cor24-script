@@ -723,9 +723,9 @@ int val_from_str(char *s) {
 
 /* ---- Command dispatch table ---- */
 
-#define MAX_CMDS      16
+#define MAX_CMDS      32
 #define MAX_CMD_NAME  16
-#define CMD_NAME_POOL_SIZE 256  /* 16 * 16 */
+#define CMD_NAME_POOL_SIZE 512  /* 32 * 16 */
 
 char cmd_name_pool[CMD_NAME_POOL_SIZE];
 int  cmd_handler[MAX_CMDS];  /* function pointers stored as int (24-bit = ptr size) */
@@ -761,6 +761,15 @@ int cmd_find(char *name) {
     }
     return -1;
 }
+
+/* ---- Return signals ---- */
+
+#define RET_OK        0
+#define RET_ERR      -1
+#define RET_BREAK    -2
+#define RET_CONTINUE -3
+
+int last_result; /* value index of last command/expression result */
 
 /* ---- Built-in command handlers ---- */
 
@@ -959,11 +968,390 @@ int cmd_exists() {
     if (token_count < 2) {
         uart_puts("error: exists?: expected 1 arg, got 0");
         uart_newline();
-        return -1;
+        return RET_ERR;
     }
-    uart_putint(check_exists(token_str(1)));
+    int result = check_exists(token_str(1));
+    last_result = val_new_int(result);
+    uart_putint(result);
     uart_newline();
+    return RET_OK;
+}
+
+/* ---- Reserved keyword check ---- */
+
+int is_reserved(char *name) {
+    if (str_eq(name, "try")) return 1;
+    if (str_eq(name, "catch")) return 1;
+    if (str_eq(name, "finally")) return 1;
+    if (str_eq(name, "throw")) return 1;
+    if (str_eq(name, "return")) return 1;
+    if (str_eq(name, "proc")) return 1;
+    if (str_eq(name, "for")) return 1;
+    if (str_eq(name, "foreach")) return 1;
     return 0;
+}
+
+/* ---- Block stack (global, avoids large stack locals) ---- */
+
+#define BLOCK_STACK_SIZE 4096
+char block_stack_pool[BLOCK_STACK_SIZE];
+int  block_stack_top;
+
+/* Push a string onto the block stack. Returns start index, or -1 on overflow. */
+int block_push(char *s) {
+    int start = block_stack_top;
+    int i = 0;
+    while (s[i] && block_stack_top < BLOCK_STACK_SIZE - 1) {
+        block_stack_pool[block_stack_top] = s[i];
+        block_stack_top = block_stack_top + 1;
+        i = i + 1;
+    }
+    block_stack_pool[block_stack_top] = 0;
+    block_stack_top = block_stack_top + 1;
+    return start;
+}
+
+char *block_get(int idx) {
+    return block_stack_pool + idx;
+}
+
+void block_pop(int pos) {
+    block_stack_top = pos;
+}
+
+/* Global line buffer for eval_block (avoids 512-byte stack local) */
+char eval_line_buf[MAX_LINE_LEN];
+
+/* ---- Line and block evaluation ---- */
+
+int eval_line(char *line) {
+    int count = tokenize_line(line);
+    if (count < 0) return RET_ERR;
+    if (count == 0) return RET_OK;
+
+    char *name = token_str(0);
+
+    /* Reserved keyword check */
+    int ci = cmd_find(name);
+    if (ci < 0) {
+        if (is_reserved(name)) {
+            uart_puts("error: reserved keyword: ");
+        } else {
+            uart_puts("error: unknown command: ");
+        }
+        uart_puts(name);
+        uart_newline();
+        return RET_ERR;
+    }
+
+    /* Pre-expansion commands: exists? */
+    if (str_eq(name, "exists?")) {
+        int (*fn)() = cmd_handler[ci];
+        fn();
+        return RET_OK;
+    }
+
+    if (expand_variables() < 0) return RET_ERR;
+
+    int (*fn)() = cmd_handler[ci];
+    return fn();
+}
+
+int eval_block(char *block) {
+    int blen = str_len(block);
+    if (blen < 2 || block[0] != 123 || block[blen - 1] != 125) {
+        uart_puts("error: invalid block");
+        uart_newline();
+        return RET_ERR;
+    }
+
+    /* Push block content onto block stack so it survives recursive calls */
+    int save = block_stack_top;
+    int bi = block_push(block);
+    char *blk = block_get(bi);
+    int i = 1; /* skip '{' */
+    int end = blen - 1; /* before '}' */
+
+    while (i < end) {
+        /* Skip whitespace and newlines */
+        while (i < end && (blk[i] == 32 || blk[i] == 9 || blk[i] == 10))
+            i = i + 1;
+        if (i >= end) break;
+
+        /* Collect one line into global buffer, respecting brace nesting */
+        int li = 0;
+        int depth = 0;
+        while (i < end && li < MAX_LINE_LEN - 1) {
+            if (blk[i] == 123) depth = depth + 1;
+            if (blk[i] == 125) depth = depth - 1;
+            if ((blk[i] == 10 || blk[i] == 59) && depth == 0) {
+                i = i + 1;
+                break;
+            }
+            eval_line_buf[li] = blk[i];
+            li = li + 1;
+            i = i + 1;
+        }
+        eval_line_buf[li] = 0;
+        if (li == 0) continue;
+
+        int ret = eval_line(eval_line_buf);
+        if (ret == RET_BREAK || ret == RET_CONTINUE || ret == RET_ERR) {
+            block_pop(save);
+            return ret;
+        }
+        if (exit_flag) { block_pop(save); return RET_OK; }
+    }
+    block_pop(save);
+    return RET_OK;
+}
+
+/* ---- Comparison commands ---- */
+
+int cmd_eq() {
+    if (expand_count < 3) {
+        uart_puts("error: eq: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result;
+    if (is_int_str(a) && is_int_str(b)) {
+        result = str_to_int(a) == str_to_int(b);
+    } else {
+        result = str_eq(a, b);
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_ne() {
+    if (expand_count < 3) {
+        uart_puts("error: ne: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result;
+    if (is_int_str(a) && is_int_str(b)) {
+        result = str_to_int(a) != str_to_int(b);
+    } else {
+        if (str_eq(a, b)) {
+            result = 0;
+        } else {
+            result = 1;
+        }
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_lt() {
+    if (expand_count < 3) {
+        uart_puts("error: lt: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result = 0;
+    if (is_int_str(a) && is_int_str(b)) {
+        if (str_to_int(a) < str_to_int(b)) result = 1;
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_gt() {
+    if (expand_count < 3) {
+        uart_puts("error: gt: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result = 0;
+    if (is_int_str(a) && is_int_str(b)) {
+        if (str_to_int(a) > str_to_int(b)) result = 1;
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_le() {
+    if (expand_count < 3) {
+        uart_puts("error: le: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result = 0;
+    if (is_int_str(a) && is_int_str(b)) {
+        if (str_to_int(a) <= str_to_int(b)) result = 1;
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_ge() {
+    if (expand_count < 3) {
+        uart_puts("error: ge: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *a = exp_str(1);
+    char *b = exp_str(2);
+    int result = 0;
+    if (is_int_str(a) && is_int_str(b)) {
+        if (str_to_int(a) >= str_to_int(b)) result = 1;
+    }
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+/* ---- Logic commands ---- */
+
+int cmd_and() {
+    if (expand_count < 3) {
+        uart_puts("error: and: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int va = val_from_str(exp_str(1));
+    int vb = val_from_str(exp_str(2));
+    int result = 0;
+    if (val_is_truthy(va) && val_is_truthy(vb)) result = 1;
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_or() {
+    if (expand_count < 3) {
+        uart_puts("error: or: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int va = val_from_str(exp_str(1));
+    int vb = val_from_str(exp_str(2));
+    int result = 0;
+    if (val_is_truthy(va) || val_is_truthy(vb)) result = 1;
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+int cmd_not() {
+    if (expand_count < 2) {
+        uart_puts("error: not: expected 1 arg");
+        uart_newline();
+        return RET_ERR;
+    }
+    int va = val_from_str(exp_str(1));
+    int result = 0;
+    if (!val_is_truthy(va)) result = 1;
+    last_result = val_new_int(result);
+    return RET_OK;
+}
+
+/* ---- Control flow commands ---- */
+
+int cmd_if() {
+    if (expand_count < 3) {
+        uart_puts("error: if: expected at least 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int save = block_stack_top;
+    int ci = block_push(exp_str(1));
+    int bi = block_push(exp_str(2));
+    int ei = -1;
+    int has_else = 0;
+    if (expand_count >= 5 && str_eq(exp_str(3), "else")) {
+        ei = block_push(exp_str(4));
+        has_else = 1;
+    }
+
+    int ret = eval_block(block_get(ci));
+    if (ret == RET_ERR) { block_pop(save); return RET_ERR; }
+
+    if (val_is_truthy(last_result)) {
+        ret = eval_block(block_get(bi));
+    } else if (has_else) {
+        ret = eval_block(block_get(ei));
+    } else {
+        ret = RET_OK;
+    }
+    block_pop(save);
+    return ret;
+}
+
+int cmd_while() {
+    if (expand_count < 3) {
+        uart_puts("error: while: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int save = block_stack_top;
+    int ci = block_push(exp_str(1));
+    int bi = block_push(exp_str(2));
+
+    int max_iter = 10000;
+    while (max_iter > 0) {
+        max_iter = max_iter - 1;
+
+        int ret = eval_block(block_get(ci));
+        if (ret == RET_ERR) { block_pop(save); return RET_ERR; }
+        if (!val_is_truthy(last_result)) break;
+
+        ret = eval_block(block_get(bi));
+        if (ret == RET_BREAK) break;
+        if (ret == RET_ERR) { block_pop(save); return RET_ERR; }
+        if (exit_flag) break;
+        /* RET_CONTINUE: just continue the loop */
+    }
+    block_pop(save);
+    return RET_OK;
+}
+
+int cmd_break() {
+    return RET_BREAK;
+}
+
+int cmd_continue_() {
+    return RET_CONTINUE;
+}
+
+/* ---- Arithmetic helper: incr ---- */
+
+int cmd_incr() {
+    if (expand_count < 2) {
+        uart_puts("error: incr: expected variable name");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *name = exp_str(1);
+    int amount = 1;
+    if (expand_count >= 3) {
+        amount = str_to_int(exp_str(2));
+    }
+    int vi = env_get(name);
+    if (vi < 0) {
+        uart_puts("error: incr: undefined variable: ");
+        uart_puts(name);
+        uart_newline();
+        return RET_ERR;
+    }
+    if (val_type[vi] != VAL_INT) {
+        uart_puts("error: incr: not an integer: ");
+        uart_puts(name);
+        uart_newline();
+        return RET_ERR;
+    }
+    val_int[vi] = val_int[vi] + amount;
+    last_result = vi;
+    return RET_OK;
 }
 
 /* ---- Command registration ---- */
@@ -974,6 +1362,24 @@ void register_builtins() {
     cmd_register("set", cmd_set);
     cmd_register("exit", cmd_exit);
     cmd_register("exists?", cmd_exists);
+    /* Comparison commands */
+    cmd_register("eq", cmd_eq);
+    cmd_register("ne", cmd_ne);
+    cmd_register("lt", cmd_lt);
+    cmd_register("gt", cmd_gt);
+    cmd_register("le", cmd_le);
+    cmd_register("ge", cmd_ge);
+    /* Logic commands */
+    cmd_register("and", cmd_and);
+    cmd_register("or", cmd_or);
+    cmd_register("not", cmd_not);
+    /* Control flow */
+    cmd_register("if", cmd_if);
+    cmd_register("while", cmd_while);
+    cmd_register("break", cmd_break);
+    cmd_register("continue", cmd_continue_);
+    cmd_register("incr", cmd_incr);
+    /* Debug commands */
     cmd_register("_valtest", cmd_valtest);
     cmd_register("_toktest", cmd_toktest);
 }
@@ -988,7 +1394,10 @@ int main() {
     env_reset();
     exit_flag = 0;
     exit_code = 0;
+    block_stack_top = 0;
     register_builtins();
+
+    last_result = val_new_int(0);
 
     while (!exit_flag) {
         uart_puts("sws> ");
@@ -996,34 +1405,7 @@ int main() {
         if (len < 0) break; /* EOF */
         if (len == 0) continue; /* empty line */
 
-        int count = tokenize_line(line_buf);
-        if (count < 0) continue; /* syntax error already reported */
-        if (count == 0) continue; /* blank or comment-only */
-
-        /* Look up command name in raw tokens */
-        char *name = token_str(0);
-        int ci = cmd_find(name);
-
-        if (ci < 0) {
-            uart_puts("error: unknown command: ");
-            uart_puts(name);
-            uart_newline();
-            continue;
-        }
-
-        /* Pre-expansion commands: exists? operates on raw tokens */
-        if (str_eq(name, "exists?")) {
-            int (*fn)() = cmd_handler[ci];
-            fn();
-            continue;
-        }
-
-        /* Expand variables in tokens */
-        if (expand_variables() < 0) continue;
-
-        /* Dispatch to handler */
-        int (*fn)() = cmd_handler[ci];
-        fn();
+        eval_line(line_buf);
     }
 
     halt();
