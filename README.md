@@ -81,6 +81,9 @@ while {le $i 15} {
 - `or a b` — logical OR
 - `not a` — logical NOT
 
+**String:**
+- `concat arg...` — concatenate all arguments (no separators)
+
 **Arithmetic:**
 - `+ a b` — addition
 - `- a b` — subtraction

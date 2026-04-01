@@ -2079,6 +2079,30 @@ int cmd_mod() {
     return RET_OK;
 }
 
+int cmd_concat() {
+    char buf[MAX_LINE_LEN];
+    int pos = 0;
+    int j = 1;
+    while (j < expand_count) {
+        char *s = exp_str(j);
+        int k = 0;
+        while (s[k] && pos < MAX_LINE_LEN - 1) {
+            buf[pos] = s[k];
+            pos = pos + 1;
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+    buf[pos] = 0;
+    last_result = val_new_str(buf);
+    if (last_result < 0) {
+        uart_puts("error: concat: value overflow");
+        uart_newline();
+        return RET_ERR;
+    }
+    return RET_OK;
+}
+
 /* ---- Command registration ---- */
 
 void register_builtins() {
@@ -2126,6 +2150,8 @@ void register_builtins() {
     /* Source and environment */
     cmd_register("source", cmd_source);
     cmd_register("env", cmd_env);
+    /* String commands */
+    cmd_register("concat", cmd_concat);
     /* Debug commands */
     cmd_register("_valtest", cmd_valtest);
     cmd_register("_toktest", cmd_toktest);

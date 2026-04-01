@@ -218,6 +218,24 @@ or  a b    # true if either truthy
 not a      # true if falsy
 ```
 
+### String Commands
+
+#### concat
+
+```
+concat [arg...]
+```
+
+Concatenate all arguments into a single string with no separators.
+With no arguments, returns an empty string. Integer arguments are
+auto-converted to their string representation.
+
+```tcl
+concat "hello, " $name "!"    # → "hello, world!"
+concat "x=" (+ 1 2)           # → "x=3"
+set msg (concat "val=" $x)    # assign concatenated result
+```
+
 ### Arithmetic Commands
 
 ```

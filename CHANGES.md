@@ -1,5 +1,13 @@
 # Changes
 
+## v0.2 (unreleased)
+
+### New Features
+
+- `concat` command: concatenate arguments into a single string with no
+  separators. Supports integer auto-conversion and command substitution.
+  Example: `concat "x=" (+ 1 2)` → `"x=3"`
+
 ## v0.1
 
 Initial release of the sws (Software Wrighter Script) interpreter for COR24.

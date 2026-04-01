@@ -423,6 +423,33 @@ run_test "env cmdsub" "env set A 1\nenv set B 2\necho (+ (env get A) (env get B)
 run_test "env roundtrip" "env set FOO bar\nenv get FOO\n\x04" "bar"
 
 echo ""
+echo "=== Testing sws concat command ==="
+
+# Basic two-string concat
+run_test "concat two strings" "echo (concat hello world)\n\x04" "helloworld"
+
+# Concat with integer (auto-converts to string)
+run_test "concat with int" "echo (concat x= 42)\n\x04" "x=42"
+
+# Concat with command substitution
+run_test "concat with cmdsub" "echo (concat x= (+ 1 2))\n\x04" "x=3"
+
+# Concat with variables
+run_test "concat with vars" "set name world\necho (concat hello, \" \" \$name !)\n\x04" "hello, world!"
+
+# Concat single arg (identity)
+run_test "concat single" "echo (concat hello)\n\x04" "hello"
+
+# Concat no args (empty string)
+run_test "concat no args" "set x (concat)\necho (eq \$x \"\")\n\x04" "1"
+
+# Use in echo
+run_test "concat in echo" "echo (concat x= (+ 1 2))\n\x04" "x=3"
+
+# Use in set (no spaces in result to avoid re-tokenization)
+run_test "concat in set" "set name world\nset msg (concat hello \$name)\necho \$msg\n\x04" "helloworld"
+
+echo ""
 echo "=== Testing sws error handling ==="
 
 # Unmatched quote
