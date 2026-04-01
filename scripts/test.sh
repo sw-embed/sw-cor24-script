@@ -20,7 +20,7 @@ run_test() {
 
     OUTPUT=$("$COR24_RUN" --run "$ASM" -u "$input" -t 5 2>&1)
 
-    if echo "$OUTPUT" | grep -qF "$expected"; then
+    if echo "$OUTPUT" | grep -qF -- "$expected"; then
         echo "PASS: $desc"
         PASS=$((PASS + 1))
     else
@@ -36,33 +36,33 @@ echo "=== Testing sws tokenizer ==="
 # Banner test
 run_test "banner" "\x04" "sws 0.1"
 
-# Bare words
-run_test "bare words" "echo hello world\n\x04" \
-    "[WORD|echo] [WORD|hello] [WORD|world]"
+# Bare words (use unknown command to trigger debug token dump)
+run_test "bare words" "foo hello world\n\x04" \
+    "[WORD|foo] [WORD|hello] [WORD|world]"
 
-# Quoted string
-run_test "quoted string" 'set x "hello world"\n\x04' \
-    "[WORD|set] [WORD|x] [QUOTED|hello world]"
+# Quoted string (unknown command to see tokens)
+run_test "quoted string" 'foo x "hello world"\n\x04' \
+    "[WORD|foo] [WORD|x] [QUOTED|hello world]"
 
 # Brace block
-run_test "brace block" "if cond { echo yes }\n\x04" \
-    "[WORD|if] [WORD|cond] [BLOCK|{ echo yes }]"
+run_test "brace block" "foo cond { echo yes }\n\x04" \
+    "[WORD|foo] [WORD|cond] [BLOCK|{ echo yes }]"
 
 # Comment stripping
-run_test "comment stripping" "echo test # comment\n\x04" \
-    "[WORD|echo] [WORD|test]"
+run_test "comment stripping" "foo test # comment\n\x04" \
+    "[WORD|foo] [WORD|test]"
 
 # Comment-only line (no token output, just prompt)
-run_test "comment-only line" "# just a comment\necho ok\n\x04" \
-    "[WORD|echo] [WORD|ok]"
+run_test "comment-only line" "# just a comment\nfoo ok\n\x04" \
+    "[WORD|foo] [WORD|ok]"
 
 # Multiple spaces
-run_test "multiple spaces" "echo    hello\n\x04" \
-    "[WORD|echo] [WORD|hello]"
+run_test "multiple spaces" "foo    hello\n\x04" \
+    "[WORD|foo] [WORD|hello]"
 
 # Nested braces
-run_test "nested braces" "if cond { if inner { echo yes } }\n\x04" \
-    "[WORD|if] [WORD|cond] [BLOCK|{ if inner { echo yes } }]"
+run_test "nested braces" "foo cond { if inner { echo yes } }\n\x04" \
+    "[WORD|foo] [WORD|cond] [BLOCK|{ if inner { echo yes } }]"
 
 echo ""
 echo "=== Testing sws value types ==="
@@ -73,7 +73,7 @@ VALOUT=$("$COR24_RUN" --run "$ASM" -u "_valtest\n\x04" -t 10 2>&1)
 check_val() {
     local desc="$1"
     local expected="$2"
-    if echo "$VALOUT" | grep -qF "$expected"; then
+    if echo "$VALOUT" | grep -qF -- "$expected"; then
         echo "PASS: $desc"
         PASS=$((PASS + 1))
     else
@@ -100,6 +100,28 @@ check_val "record field get"     "field:0"
 check_val "record field has"     "has:1"
 check_val "record field miss"    "miss:0"
 check_val "total allocations"    "vals:11"
+
+echo ""
+echo "=== Testing sws variables ==="
+
+# set and echo
+run_test "set/echo int" "set x 42\necho \$x\n\x04" "42"
+run_test "set/echo string" "set name hello\necho \$name\n\x04" "hello"
+run_test "set/echo negative" "set n -7\necho \$n\n\x04" "-7"
+run_test "set/echo quoted" 'set msg "hello world"\necho $msg\n\x04' "hello world"
+
+# Variable overwrite
+run_test "var overwrite" "set x 1\nset x 2\necho \$x\n\x04" "2"
+
+# exists? for defined and undefined
+run_test "exists? defined" "set x 1\nexists? \$x\n\x04" "1"
+run_test "exists? undefined" "exists? \$missing\n\x04" "0"
+
+# Undefined variable error
+run_test "undef var error" "echo \$nope\n\x04" "error: undefined variable: nope"
+
+# echo multiple args
+run_test "echo multi" "set a hello\nset b world\necho \$a \$b\n\x04" "hello world"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

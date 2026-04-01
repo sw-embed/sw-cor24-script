@@ -1,6 +1,6 @@
 number = 4
 slug = "004-variables"
-status = "pending"
+status = "in-progress"
 description = """
 Implement the variable environment (Env) for sws.
 

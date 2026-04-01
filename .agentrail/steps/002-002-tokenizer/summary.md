@@ -1,0 +1,1 @@
+Implemented line tokenizer with flat pool storage (tc24r can't do 2D arrays). Handles bare words, quoted strings with backslash escapes, brace blocks with nested counting, and comment stripping. Added REPL loop with debug token output. Reduced static limits for COR24 assembler. Test suite expanded to 8 cases — all pass.

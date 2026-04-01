@@ -483,6 +483,244 @@ int val_is_truthy(int idx) {
     return 1;
 }
 
+/* ---- Variable environment ---- */
+
+/* Flat name pool: var i's name starts at var_name_pool[i * MAX_VAR_NAME] */
+#define VAR_NAME_POOL_SIZE 2048  /* 64 * 32 = 2048 */
+char var_name_pool[VAR_NAME_POOL_SIZE];
+int  var_val[MAX_VARS];   /* value index into value storage */
+int  var_count;
+
+/* Get pointer to variable name */
+char *var_name(int idx) {
+    return var_name_pool + idx * MAX_VAR_NAME;
+}
+
+/* Find variable index by name. Returns -1 if not found. */
+int env_find(char *name) {
+    int i = 0;
+    while (i < var_count) {
+        if (str_eq(var_name(i), name)) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+/* Set or update a variable. Returns 0 on success, -1 on overflow. */
+int env_set(char *name, int val_idx) {
+    int i = env_find(name);
+    if (i >= 0) {
+        var_val[i] = val_idx;
+        return 0;
+    }
+    if (var_count >= MAX_VARS) return -1;
+    /* Copy name into pool */
+    char *dst = var_name(var_count);
+    int k = 0;
+    while (name[k] && k < MAX_VAR_NAME - 1) {
+        dst[k] = name[k];
+        k = k + 1;
+    }
+    dst[k] = 0;
+    var_val[var_count] = val_idx;
+    var_count = var_count + 1;
+    return 0;
+}
+
+/* Get value index for a variable. Returns -1 if undefined. */
+int env_get(char *name) {
+    int i = env_find(name);
+    if (i < 0) return -1;
+    return var_val[i];
+}
+
+/* Check if variable exists. Returns 1 if yes, 0 if no. */
+int env_has(char *name) {
+    return env_find(name) >= 0;
+}
+
+/* Remove a variable. Returns 0 on success, -1 if not found. */
+int env_unset(char *name) {
+    int i = env_find(name);
+    if (i < 0) return -1;
+    /* Shift remaining vars down */
+    while (i < var_count - 1) {
+        str_copy(var_name(i), var_name(i + 1));
+        var_val[i] = var_val[i + 1];
+        i = i + 1;
+    }
+    var_count = var_count - 1;
+    return 0;
+}
+
+/* Reset environment */
+void env_reset() {
+    var_count = 0;
+}
+
+/* ---- Variable substitution ---- */
+
+/* Expanded token buffer — tokens after $var substitution */
+#define EXPAND_POOL_SIZE 2048
+char expand_pool[EXPAND_POOL_SIZE];
+int  expand_starts[MAX_TOKENS];
+int  expand_count;
+int  expand_pool_used;
+
+/* Parse a variable reference from a token string starting at $.
+ * Writes var name into vname, field name into fname (or empty).
+ * Returns number of chars consumed (not counting the $). */
+int parse_var_ref(char *s, char *vname, char *fname) {
+    int i = 0;
+    int vi = 0;
+    /* Read variable name: alphanumeric and underscore */
+    while (s[i] && s[i] != 46 /* '.' */ && s[i] != 32 && s[i] != 9
+           && vi < MAX_VAR_NAME - 1) {
+        vname[vi] = s[i];
+        vi = vi + 1;
+        i = i + 1;
+    }
+    vname[vi] = 0;
+    fname[0] = 0;
+    /* Check for .field */
+    if (s[i] == 46) { /* '.' */
+        i = i + 1;
+        int fi = 0;
+        while (s[i] && s[i] != 32 && s[i] != 9
+               && fi < MAX_VAR_NAME - 1) {
+            fname[fi] = s[i];
+            fi = fi + 1;
+            i = i + 1;
+        }
+        fname[fi] = 0;
+    }
+    return i;
+}
+
+/* Runtime error flag — set to 1 on error */
+int runtime_error;
+
+/* Expand variables in tokens. Replaces token_pool/token_starts with
+ * expanded versions in expand_pool/expand_starts.
+ * Returns 0 on success, -1 on error (e.g. undefined variable). */
+int expand_variables() {
+    expand_count = 0;
+    expand_pool_used = 0;
+    runtime_error = 0;
+    int t = 0;
+    while (t < token_count) {
+        char *tok = token_str(t);
+        int ttype = token_type[t];
+        expand_starts[expand_count] = expand_pool_used;
+
+        if (ttype == TOK_BLOCK) {
+            /* Blocks are NOT expanded — they are deferred */
+            int k = 0;
+            while (tok[k] && expand_pool_used < EXPAND_POOL_SIZE - 1) {
+                expand_pool[expand_pool_used] = tok[k];
+                expand_pool_used = expand_pool_used + 1;
+                k = k + 1;
+            }
+        } else if (tok[0] == 36) { /* '$' — entire token is a variable ref */
+            char vname[MAX_VAR_NAME];
+            char fname[MAX_VAR_NAME];
+            parse_var_ref(tok + 1, vname, fname);
+
+            int vi = env_get(vname);
+            if (vi < 0) {
+                uart_puts("error: undefined variable: ");
+                uart_puts(vname);
+                uart_newline();
+                runtime_error = 1;
+                return -1;
+            }
+
+            if (fname[0]) {
+                /* $var.field — record field access */
+                if (val_type[vi] != VAL_REC) {
+                    uart_puts("error: not a record: ");
+                    uart_puts(vname);
+                    uart_newline();
+                    runtime_error = 1;
+                    return -1;
+                }
+                int fvi = val_rec_get(vi, fname);
+                if (fvi < 0) {
+                    uart_puts("error: no field '");
+                    uart_puts(fname);
+                    uart_puts("' in ");
+                    uart_puts(vname);
+                    uart_newline();
+                    runtime_error = 1;
+                    return -1;
+                }
+                /* Format field value as string */
+                char tmp[MAX_VAR_VAL];
+                val_to_str(fvi, tmp);
+                int k = 0;
+                while (tmp[k] && expand_pool_used < EXPAND_POOL_SIZE - 1) {
+                    expand_pool[expand_pool_used] = tmp[k];
+                    expand_pool_used = expand_pool_used + 1;
+                    k = k + 1;
+                }
+            } else {
+                /* $var — format value as string */
+                char tmp[MAX_VAR_VAL];
+                val_to_str(vi, tmp);
+                int k = 0;
+                while (tmp[k] && expand_pool_used < EXPAND_POOL_SIZE - 1) {
+                    expand_pool[expand_pool_used] = tmp[k];
+                    expand_pool_used = expand_pool_used + 1;
+                    k = k + 1;
+                }
+            }
+        } else {
+            /* Plain token — copy as-is */
+            int k = 0;
+            while (tok[k] && expand_pool_used < EXPAND_POOL_SIZE - 1) {
+                expand_pool[expand_pool_used] = tok[k];
+                expand_pool_used = expand_pool_used + 1;
+                k = k + 1;
+            }
+        }
+        /* Null-terminate expanded token */
+        if (expand_pool_used < EXPAND_POOL_SIZE) {
+            expand_pool[expand_pool_used] = 0;
+            expand_pool_used = expand_pool_used + 1;
+        }
+        expand_count = expand_count + 1;
+        t = t + 1;
+    }
+    return 0;
+}
+
+/* Get pointer to expanded token string */
+char *exp_str(int idx) {
+    return expand_pool + expand_starts[idx];
+}
+
+/* ---- Helpers for value creation from token strings ---- */
+
+/* Check if a string looks like an integer (optional minus, then digits) */
+int is_int_str(char *s) {
+    int i = 0;
+    if (s[0] == 45) i = 1; /* '-' */
+    if (s[i] == 0) return 0; /* empty or just "-" */
+    while (s[i]) {
+        if (s[i] < 48 || s[i] > 57) return 0;
+        i = i + 1;
+    }
+    return 1;
+}
+
+/* Create a value from a string — auto-detect int vs string */
+int val_from_str(char *s) {
+    if (is_int_str(s)) {
+        return val_new_int(str_to_int(s));
+    }
+    return val_new_str(s);
+}
+
 /* ---- Input buffer ---- */
 
 char line_buf[MAX_LINE_LEN];
@@ -535,11 +773,31 @@ void val_print(int idx) {
     uart_puts(val_fmt_buf);
 }
 
+/* ---- exists? helper (checks without runtime error) ---- */
+
+/* Check if $var or $var.field reference is valid.
+ * tok is the raw token including the $ prefix.
+ * Returns 1 if present, 0 if not. Never errors. */
+int check_exists(char *tok) {
+    if (tok[0] != 36) return 0; /* must start with $ */
+    char vname[MAX_VAR_NAME];
+    char fname[MAX_VAR_NAME];
+    parse_var_ref(tok + 1, vname, fname);
+
+    int vi = env_get(vname);
+    if (vi < 0) return 0; /* variable not defined */
+    if (fname[0] == 0) return 1; /* just $var, exists */
+    /* $var.field — check record */
+    if (val_type[vi] != VAL_REC) return 0;
+    return val_rec_has(vi, fname);
+}
+
 int main() {
     uart_puts("sws 0.1");
     uart_newline();
 
     val_reset();
+    env_reset();
 
     while (1) {
         uart_puts("> ");
@@ -603,15 +861,63 @@ int main() {
             continue;
         }
 
-        /* Debug: echo tokens */
+        /* exists? — must check BEFORE variable expansion (to avoid error on missing vars) */
+        if (str_eq(token_str(0), "exists?")) {
+            if (count < 2) {
+                uart_puts("error: exists? requires an argument");
+                uart_newline();
+                continue;
+            }
+            uart_putint(check_exists(token_str(1)));
+            uart_newline();
+            continue;
+        }
+
+        /* Expand variables in tokens */
+        if (expand_variables() < 0) continue; /* runtime error already reported */
+
+        /* --- Command dispatch --- */
+
+        /* set name value */
+        if (str_eq(exp_str(0), "set")) {
+            if (expand_count < 3) {
+                uart_puts("error: set requires name and value");
+                uart_newline();
+                continue;
+            }
+            char *name = exp_str(1);
+            char *val_s = exp_str(2);
+            int vi = val_from_str(val_s);
+            if (vi < 0) {
+                uart_puts("error: value overflow");
+                uart_newline();
+                continue;
+            }
+            env_set(name, vi);
+            continue;
+        }
+
+        /* echo args... */
+        if (str_eq(exp_str(0), "echo")) {
+            int j = 1;
+            while (j < expand_count) {
+                if (j > 1) uart_putc(32); /* space */
+                uart_puts(exp_str(j));
+                j = j + 1;
+            }
+            uart_newline();
+            continue;
+        }
+
+        /* Debug: echo tokens (for unrecognized commands) */
         int j = 0;
-        while (j < count) {
+        while (j < expand_count) {
             uart_puts("[");
             uart_puts(tok_type_name(token_type[j]));
             uart_puts("|");
-            uart_puts(token_str(j));
+            uart_puts(exp_str(j));
             uart_puts("]");
-            if (j < count - 1) uart_putc(32); /* space */
+            if (j < expand_count - 1) uart_putc(32); /* space */
             j = j + 1;
         }
         uart_newline();

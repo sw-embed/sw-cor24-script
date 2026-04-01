@@ -1,6 +1,6 @@
 number = 3
 slug = "003-value-types"
-status = "pending"
+status = "completed"
 description = """
 Implement the Value type system for sws.
 
@@ -8,3 +8,4 @@ sws has three value types: Integer,..."""
 role = "production"
 context_files = []
 created_at = "2026-03-31T02:15:19"
+completed_at = "2026-03-31T17:15:10"
