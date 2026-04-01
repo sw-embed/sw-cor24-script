@@ -1,6 +1,6 @@
 number = 1
 slug = "001-architecture"
-status = "in-progress"
+status = "completed"
 description = """
 Design the sws architecture and set up build/test infrastructure.
 
@@ -8,3 +8,4 @@ Design the sws architecture and set up build/test infrastructure.
 role = "production"
 context_files = []
 created_at = "2026-03-31T02:15:19"
+completed_at = "2026-03-31T16:31:00"

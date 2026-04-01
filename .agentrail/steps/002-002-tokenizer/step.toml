@@ -1,6 +1,6 @@
 number = 2
 slug = "002-tokenizer"
-status = "pending"
+status = "in-progress"
 description = """
 Implement a line-by-line tokenizer for sws.
 
