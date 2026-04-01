@@ -1,0 +1,1 @@
+Added v0.1 documentation: expanded README with language summary, build instructions, and FizzBuzz example; created complete language reference (docs/language-reference.md) covering all syntax, types, commands, and limits; created CHANGES.md with full feature set and known limitations; added three example scripts (hello.sws, build.sws, system-check.sws). All 140 tests pass.
