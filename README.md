@@ -128,7 +128,8 @@ while {le $i 15} {
 - `env unset NAME` — remove process environment variable
 
 See [docs/language-reference.md](docs/language-reference.md) for the
-complete specification.
+complete specification, and [docs/usage.md](docs/usage.md) for a
+practical guide with runnable examples.
 
 ## Naming Convention
 

@@ -8,6 +8,13 @@
   separators. Supports integer auto-conversion and command substitution.
   Example: `concat "x=" (+ 1 2)` → `"x=3"`
 
+### Documentation
+
+- Added `docs/usage.md`: comprehensive usage guide with runnable examples
+  covering variables, arithmetic, control flow, records, env, filesystem,
+  and common patterns/idioms
+- Updated README.md to link to the usage guide
+
 ## v0.1
 
 Initial release of the sws (Software Wrighter Script) interpreter for COR24.
