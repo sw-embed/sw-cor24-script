@@ -315,6 +315,126 @@ run_test "cmdsub incr loop" "set i 0\nincr i (+ 3 2)\necho \$i\n\x04" "5"
 run_test "unmatched paren" "echo (+ 1 2\n\x04" "error: unmatched ("
 
 echo ""
+echo "=== Testing sws control flow ==="
+
+# if true branch
+run_test "if true" "if {eq 1 1} {echo yes}\n\x04" "yes"
+
+# if false (no output from body)
+OUTPUT=$("$COR24_RUN" --run "$ASM" -u "if {eq 1 2} {echo no}\necho done\n\x04" -t 5 2>&1)
+if echo "$OUTPUT" | grep -qF "done" && ! echo "$OUTPUT" | grep -qF "no"; then
+    echo "PASS: if false skips body"
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: if false skips body"
+    echo "  Got: $OUTPUT"
+    FAIL=$((FAIL + 1))
+fi
+
+# if/else true branch
+run_test "if/else true" "if {eq 1 1} {echo yes} else {echo no}\n\x04" "yes"
+
+# if/else false branch
+run_test "if/else false" "if {eq 1 2} {echo yes} else {echo no}\n\x04" "no"
+
+# Nested if
+run_test "nested if" "if {eq 1 1} {if {eq 2 2} {echo deep}}\n\x04" "deep"
+
+# while loop with counter
+run_test "while loop" "set i 0\nwhile {lt \$i 3} {incr i}\necho \$i\n\x04" "3"
+
+# while with echo in body
+run_test "while echo" "set i 0\nwhile {lt \$i 3} {echo \$i\nincr i}\n\x04" "0"
+
+# break exits loop
+run_test "break" "set i 0\nwhile {eq 1 1} {incr i\nif {eq \$i 5} {break}}\necho \$i\n\x04" "5"
+
+# continue skips rest of body
+run_test "continue" "set i 0\nset s 0\nwhile {lt \$i 5} {incr i\nif {eq \$i 3} {continue}\nincr s}\necho \$s\n\x04" "4"
+
+# Comparison commands
+run_test "eq true" "echo (eq 5 5)\n\x04" "1"
+run_test "eq false" "echo (eq 5 6)\n\x04" "0"
+run_test "ne true" "echo (ne 5 6)\n\x04" "1"
+run_test "ne false" "echo (ne 5 5)\n\x04" "0"
+run_test "lt true" "echo (lt 3 5)\n\x04" "1"
+run_test "lt false" "echo (lt 5 3)\n\x04" "0"
+run_test "gt true" "echo (gt 5 3)\n\x04" "1"
+run_test "gt false" "echo (gt 3 5)\n\x04" "0"
+run_test "le true eq" "echo (le 3 3)\n\x04" "1"
+run_test "le true lt" "echo (le 2 3)\n\x04" "1"
+run_test "le false" "echo (le 4 3)\n\x04" "0"
+run_test "ge true eq" "echo (ge 3 3)\n\x04" "1"
+run_test "ge true gt" "echo (ge 4 3)\n\x04" "1"
+run_test "ge false" "echo (ge 2 3)\n\x04" "0"
+
+# String comparison
+run_test "eq string" "echo (eq hello hello)\n\x04" "1"
+run_test "ne string" "echo (ne hello world)\n\x04" "1"
+
+# Logic commands
+run_test "and true" "echo (and 1 1)\n\x04" "1"
+run_test "and false" "echo (and 1 0)\n\x04" "0"
+run_test "or true" "echo (or 0 1)\n\x04" "1"
+run_test "or false" "echo (or 0 0)\n\x04" "0"
+run_test "not true" "echo (not 0)\n\x04" "1"
+run_test "not false" "echo (not 1)\n\x04" "0"
+
+# Combined logic
+run_test "and+or combo" "echo (or (and 0 1) (and 1 1))\n\x04" "1"
+
+# incr default
+run_test "incr default" "set x 10\nincr x\necho \$x\n\x04" "11"
+
+# incr with amount
+run_test "incr amount" "set x 10\nincr x 5\necho \$x\n\x04" "15"
+
+# incr undefined → error
+run_test "incr undef" "incr nope\n\x04" "error: incr: undefined variable: nope"
+
+# if missing args → error
+run_test "if no args" "if\n\x04" "error: if: expected at least 2 args"
+
+# while missing args → error
+run_test "while no args" "while\n\x04" "error: while: expected 2 args"
+
+echo ""
+echo "=== Testing sws end-to-end scenarios ==="
+
+# FizzBuzz-style loop
+run_test "fizzbuzz loop" "set i 1\nwhile {le \$i 5} {if {eq (% \$i 2) 0} {echo even} else {echo odd}\nincr i}\n\x04" "odd"
+
+# Nested while loops
+run_test "nested while" "set i 0\nset total 0\nwhile {lt \$i 3} {set j 0\nwhile {lt \$j 2} {incr total\nincr j}\nincr i}\necho \$total\n\x04" "6"
+
+# Variable shadowing
+run_test "var shadow" "set x 1\nset x 2\nset x 3\necho \$x\n\x04" "3"
+
+# Arithmetic chain
+run_test "arith chain" "echo (+ (* 3 4) (- 10 5))\n\x04" "17"
+
+# Set from command substitution then use
+run_test "set from cmdsub" "set sum (+ 100 200)\necho \$sum\n\x04" "300"
+
+# Env get in command substitution
+run_test "env cmdsub" "env set A 1\nenv set B 2\necho (+ (env get A) (env get B))\n\x04" "3"
+
+# Env roundtrip
+run_test "env roundtrip" "env set FOO bar\nenv get FOO\n\x04" "bar"
+
+echo ""
+echo "=== Testing sws error handling ==="
+
+# Unmatched quote
+run_test "unmatched quote" "echo \"hello\n\x04" "error"
+
+# Multiple errors don't crash
+run_test "recover from errors" "echo \$undef\necho ok\n\x04" "ok"
+
+# Deeply nested command substitution
+run_test "deep cmdsub" "echo (+ (+ (+ (+ 1 1) 1) 1) 1)\n\x04" "5"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then

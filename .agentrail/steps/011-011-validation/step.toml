@@ -1,6 +1,6 @@
 number = 11
 slug = "011-validation"
-status = "pending"
+status = "in-progress"
 description = """
 End-to-end validation and testing of the sws interpreter.
 

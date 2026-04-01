@@ -1,0 +1,1 @@
+Implemented source command with depth tracking (MAX_SOURCE_DEPTH=16), fs_read_file stub, process environment variable storage (penv_*), and env command with get/set/unset subcommands. Bumped MAX_CMDS 32→48. Added 9 tests, all 77 pass.
