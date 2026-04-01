@@ -723,9 +723,9 @@ int val_from_str(char *s) {
 
 /* ---- Command dispatch table ---- */
 
-#define MAX_CMDS      32
+#define MAX_CMDS      48
 #define MAX_CMD_NAME  16
-#define CMD_NAME_POOL_SIZE 512  /* 32 * 16 */
+#define CMD_NAME_POOL_SIZE 768  /* 48 * 16 */
 
 char cmd_name_pool[CMD_NAME_POOL_SIZE];
 int  cmd_handler[MAX_CMDS];  /* function pointers stored as int (24-bit = ptr size) */
@@ -1511,6 +1511,13 @@ int fs_exists(char *path) {
     return 0;
 }
 
+/* Read file contents into buf. Returns bytes read, or -1 on error.
+ * Stub: filesystem not yet available. */
+int fs_read_file(char *path, char *buf, int max_len) {
+    /* Stub: filesystem not yet available */
+    return -1;
+}
+
 /* ---- Filesystem command handlers ---- */
 
 int cmd_cd() {
@@ -1659,6 +1666,191 @@ int cmd_fexists() {
     return RET_OK;
 }
 
+/* ---- Source command ---- */
+
+#define MAX_SOURCE_DEPTH 16
+#define SOURCE_BUF_SIZE  4096
+
+int source_depth;
+char source_buf[SOURCE_BUF_SIZE];
+char source_line_buf[MAX_LINE_LEN];
+
+/* Forward declaration — eval_line is already defined above */
+
+int cmd_source() {
+    if (expand_count < 2) {
+        uart_puts("error: source: expected filename");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *path = exp_str(1);
+
+    /* Check recursion depth */
+    if (source_depth >= MAX_SOURCE_DEPTH) {
+        uart_puts("error: source: max depth exceeded");
+        uart_newline();
+        return RET_ERR;
+    }
+
+    /* Resolve path */
+    char resolved[MAX_PATH_LEN];
+    fs_resolve(path, resolved);
+
+    /* Read file */
+    int bytes = fs_read_file(resolved, source_buf, SOURCE_BUF_SIZE);
+    if (bytes < 0) {
+        uart_puts("error: source: cannot read: ");
+        uart_puts(resolved);
+        uart_newline();
+        return RET_ERR;
+    }
+
+    source_depth = source_depth + 1;
+
+    /* Evaluate line by line */
+    int i = 0;
+    while (i < bytes) {
+        /* Collect one line */
+        int li = 0;
+        while (i < bytes && source_buf[i] != 10 && li < MAX_LINE_LEN - 1) {
+            source_line_buf[li] = source_buf[i];
+            li = li + 1;
+            i = i + 1;
+        }
+        source_line_buf[li] = 0;
+        if (i < bytes && source_buf[i] == 10) i = i + 1; /* skip newline */
+
+        if (li == 0) continue;
+
+        int ret = eval_line(source_line_buf);
+        if (ret == RET_ERR) {
+            source_depth = source_depth - 1;
+            return RET_ERR;
+        }
+        if (exit_flag) break;
+    }
+
+    source_depth = source_depth - 1;
+    last_result = val_new_int(0);
+    return RET_OK;
+}
+
+/* ---- Environment variables (process env, not script vars) ---- */
+
+#define MAX_ENV      32
+#define ENV_NAME_POOL_SIZE  1024  /* 32 * 32 */
+#define ENV_VAL_POOL_SIZE   4096  /* 32 * 128 */
+
+char penv_name_pool[ENV_NAME_POOL_SIZE];
+char penv_val_pool[ENV_VAL_POOL_SIZE];
+int  penv_count;
+
+char *penv_name(int idx) {
+    return penv_name_pool + idx * MAX_VAR_NAME;
+}
+
+char *penv_val(int idx) {
+    return penv_val_pool + idx * MAX_VAR_VAL;
+}
+
+int penv_find(char *name) {
+    int i = 0;
+    while (i < penv_count) {
+        if (str_eq(penv_name(i), name)) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+int penv_set(char *name, char *val) {
+    int i = penv_find(name);
+    if (i >= 0) {
+        str_copy(penv_val(i), val);
+        return 0;
+    }
+    if (penv_count >= MAX_ENV) return -1;
+    char *dst_n = penv_name(penv_count);
+    int k = 0;
+    while (name[k] && k < MAX_VAR_NAME - 1) {
+        dst_n[k] = name[k];
+        k = k + 1;
+    }
+    dst_n[k] = 0;
+    str_copy(penv_val(penv_count), val);
+    penv_count = penv_count + 1;
+    return 0;
+}
+
+int penv_unset(char *name) {
+    int i = penv_find(name);
+    if (i < 0) return -1;
+    while (i < penv_count - 1) {
+        str_copy(penv_name(i), penv_name(i + 1));
+        str_copy(penv_val(i), penv_val(i + 1));
+        i = i + 1;
+    }
+    penv_count = penv_count - 1;
+    return 0;
+}
+
+void penv_reset() {
+    penv_count = 0;
+}
+
+/* env get NAME / env set NAME VALUE / env unset NAME */
+int cmd_env() {
+    if (expand_count < 3) {
+        uart_puts("error: env: expected subcommand and args");
+        uart_newline();
+        return RET_ERR;
+    }
+    char *sub = exp_str(1);
+
+    if (str_eq(sub, "get")) {
+        char *name = exp_str(2);
+        int i = penv_find(name);
+        if (i < 0) {
+            uart_puts("error: env: undefined: ");
+            uart_puts(name);
+            uart_newline();
+            return RET_ERR;
+        }
+        uart_puts(penv_val(i));
+        uart_newline();
+        last_result = val_new_str(penv_val(i));
+        return RET_OK;
+    }
+
+    if (str_eq(sub, "set")) {
+        if (expand_count < 4) {
+            uart_puts("error: env set: expected NAME VALUE");
+            uart_newline();
+            return RET_ERR;
+        }
+        char *name = exp_str(2);
+        char *val_s = exp_str(3);
+        if (penv_set(name, val_s) < 0) {
+            uart_puts("error: env set: overflow");
+            uart_newline();
+            return RET_ERR;
+        }
+        last_result = val_new_int(0);
+        return RET_OK;
+    }
+
+    if (str_eq(sub, "unset")) {
+        char *name = exp_str(2);
+        penv_unset(name);
+        last_result = val_new_int(0);
+        return RET_OK;
+    }
+
+    uart_puts("error: env: unknown subcommand: ");
+    uart_puts(sub);
+    uart_newline();
+    return RET_ERR;
+}
+
 /* ---- Arithmetic helper: incr ---- */
 
 int cmd_incr() {
@@ -1728,6 +1920,9 @@ void register_builtins() {
     cmd_register("cp", cmd_cp);
     cmd_register("stat", cmd_stat);
     cmd_register("fexists", cmd_fexists);
+    /* Source and environment */
+    cmd_register("source", cmd_source);
+    cmd_register("env", cmd_env);
     /* Debug commands */
     cmd_register("_valtest", cmd_valtest);
     cmd_register("_toktest", cmd_toktest);
@@ -1741,12 +1936,14 @@ int main() {
 
     val_reset();
     env_reset();
+    penv_reset();
     fs_init();
     exit_flag = 0;
     exit_code = 0;
     pragma_run_rc = 0;
     rc_defined = 0;
     block_stack_top = 0;
+    source_depth = 0;
     register_builtins();
 
     last_result = val_new_int(0);

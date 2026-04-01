@@ -242,6 +242,39 @@ run_test "fexists stub" "fexists /tmp\n\x04" "0"
 run_test "fexists no args" "fexists\n\x04" "error: fexists: expected path argument"
 
 echo ""
+echo "=== Testing sws source command ==="
+
+# source with no args → error
+run_test "source no args" "source\n\x04" "error: source: expected filename"
+
+# source nonexistent file → error (fs stub returns -1)
+run_test "source not found" "source lib.sws\n\x04" "error: source: cannot read:"
+
+echo ""
+echo "=== Testing sws env command ==="
+
+# env set and get
+run_test "env set/get" "env set PATH /bin\nenv get PATH\n\x04" "/bin"
+
+# env get undefined → error
+run_test "env get undef" "env get MISSING\n\x04" "error: env: undefined: MISSING"
+
+# env set overwrite
+run_test "env overwrite" "env set X old\nenv set X new\nenv get X\n\x04" "new"
+
+# env unset
+run_test "env unset" "env set Y val\nenv unset Y\nenv get Y\n\x04" "error: env: undefined: Y"
+
+# env bad subcommand → error
+run_test "env bad subcmd" "env foo bar\n\x04" "error: env: unknown subcommand: foo"
+
+# env missing args → error
+run_test "env no args" "env\n\x04" "error: env: expected subcommand and args"
+
+# env set missing value → error
+run_test "env set no val" "env set X\n\x04" "error: env set: expected NAME VALUE"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then

@@ -1,6 +1,6 @@
 number = 9
 slug = "009-source-command"
-status = "pending"
+status = "in-progress"
 description = """
 Implement the source command and environment variable support.
 

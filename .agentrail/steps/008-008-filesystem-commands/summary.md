@@ -1,0 +1,1 @@
+Implemented filesystem commands (cd, pwd, ls, mkdir, rm, mv, cp, stat, fexists) with fs_* abstraction layer. cd/pwd track cwd with path resolution; other fs_* functions are stubs returning 'filesystem not available' until COR24 OS syscalls are defined. Added 18 tests covering all commands, argument validation, and stub errors. All 68 tests pass.
