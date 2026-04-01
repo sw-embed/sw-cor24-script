@@ -1,0 +1,1 @@
+Implemented concat command: concatenates all arguments into a single string with no separators. Added cmd_concat() to sws.c with buffer-based string building, registered in dispatch table. Added 8 tests (basic, integer, cmdsub, variables, single arg, empty, echo usage, set usage). Updated CHANGES.md, README.md, and language-reference.md.

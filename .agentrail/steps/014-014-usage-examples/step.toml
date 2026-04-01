@@ -1,0 +1,10 @@
+number = 14
+slug = "014-usage-examples"
+status = "in-progress"
+description = """
+Create docs/usage.md with comprehensive usage examples for sws.
+
+This should ..."""
+role = "production"
+context_files = []
+created_at = "2026-04-01T11:49:21"
