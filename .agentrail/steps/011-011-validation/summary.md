@@ -1,0 +1,1 @@
+Added 47 new tests to test.sh covering control flow (if/else/while/break/continue), all comparison commands, logic commands, incr, end-to-end scenarios (fizzbuzz, nested loops, arithmetic chains, env in cmdsub), and error handling. Created test-all.sh runner. Total: 140 tests, all passing. No bugs found during validation.

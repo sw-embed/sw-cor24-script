@@ -1,0 +1,43 @@
+# build.sws — Example build script in sws
+#
+# Demonstrates: if/else, while, incr, command substitution,
+#   pragma run-rc, $rc record, exists?
+
+pragma run-rc on
+
+echo "=== Build Script ==="
+
+# Track build steps
+set step 0
+set errors 0
+
+# Step 1: compile
+incr step
+echo "Step" $step ": compile"
+run tc24r main.c -o main.s
+if {eq $rc.run 0} {
+    echo "  compile OK (exit" $rc.prog ")"
+} else {
+    echo "  compile FAILED:" $rc.msg
+    incr errors
+}
+
+# Step 2: assemble
+incr step
+echo "Step" $step ": assemble"
+run as24 main.s -o main.bin
+if {eq $rc.run 0} {
+    echo "  assemble OK"
+} else {
+    echo "  assemble FAILED:" $rc.msg
+    incr errors
+}
+
+# Report
+echo ""
+if {eq $errors 0} {
+    echo "Build succeeded in" $step "steps"
+} else {
+    echo "Build failed with" $errors "error(s)"
+    exit 1
+}

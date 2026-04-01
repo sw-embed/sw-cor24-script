@@ -1,0 +1,46 @@
+# system-check.sws — System information script in sws
+#
+# Demonstrates: env get/set, exists?, arithmetic, while loop,
+#   command substitution, fexists
+
+echo "=== System Check ==="
+
+# Set up environment
+env set HOSTNAME cor24-dev
+env set USER admin
+
+echo "Host:" (env get HOSTNAME)
+echo "User:" (env get USER)
+
+# Check working directory
+echo "CWD:" (pwd)
+
+# Arithmetic: compute a checksum-like value
+set sum 0
+set i 1
+while {le $i 10} {
+    set sum (+ $sum (* $i $i))
+    incr i
+}
+echo "Sum of squares 1-10:" $sum
+
+# Variable existence checks
+set config_loaded 1
+if {exists? $config_loaded} {
+    echo "Config: loaded"
+} else {
+    echo "Config: not loaded"
+}
+
+# Check for missing variable
+if {exists? $missing_var} {
+    echo "unexpected"
+} else {
+    echo "Missing var check: OK"
+}
+
+# Check filesystem (stub)
+echo "Checking /bin..." (fexists /bin)
+
+echo ""
+echo "System check complete"
