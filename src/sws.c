@@ -271,6 +271,218 @@ int tokenize_line(char *line) {
     return token_count;
 }
 
+/* ---- Value type system ---- */
+
+/* Type tags */
+#define VAL_INT 0
+#define VAL_STR 1
+#define VAL_REC 2
+
+/* Value storage limits */
+#define MAX_VALS       64
+
+/* Parallel arrays for value storage.
+ * 2D arrays are flattened to 1D to avoid large strides that
+ * exceed tc24r/as24's lc immediate range (0..127). */
+int  val_type[MAX_VALS];
+int  val_int[MAX_VALS];
+/* 64 * 128 = 8192 */
+#define VAL_STR_POOL_SIZE 8192
+/* 64 * 16 = 1024 */
+#define VAL_REC_POOL_SIZE 1024
+
+char val_str_pool[VAL_STR_POOL_SIZE];          /* flat string pool */
+int  val_rec_fld[VAL_REC_POOL_SIZE];           /* field name value indices */
+int  val_rec_val[VAL_REC_POOL_SIZE];           /* field value indices */
+int  val_rec_count[MAX_VALS];
+int  val_count;
+
+/* Index helpers for flat arrays */
+int vsp(int idx) { return idx * MAX_VAR_VAL; }  /* val_str_pool offset */
+int vrf(int idx, int f) { return idx * MAX_FIELDS + f; } /* rec field offset */
+
+/* Get pointer to a value's string data */
+char *val_str_ptr(int idx) {
+    return val_str_pool + vsp(idx);
+}
+
+/* Reset all values (call at start or between scripts) */
+void val_reset() {
+    val_count = 0;
+}
+
+/* Allocate a new integer value. Returns index, or -1 on overflow. */
+int val_new_int(int n) {
+    if (val_count >= MAX_VALS) return -1;
+    int idx = val_count;
+    val_type[idx] = VAL_INT;
+    val_int[idx] = n;
+    val_count = val_count + 1;
+    return idx;
+}
+
+/* Allocate a new string value. Returns index, or -1 on overflow. */
+int val_new_str(char *s) {
+    if (val_count >= MAX_VALS) return -1;
+    int idx = val_count;
+    val_type[idx] = VAL_STR;
+    /* Copy string, truncate if needed */
+    char *dst = val_str_ptr(idx);
+    int i = 0;
+    while (s[i] && i < MAX_VAR_VAL - 1) {
+        dst[i] = s[i];
+        i = i + 1;
+    }
+    dst[i] = 0;
+    val_count = val_count + 1;
+    return idx;
+}
+
+/* Allocate a new empty record. Returns index, or -1 on overflow. */
+int val_new_rec() {
+    if (val_count >= MAX_VALS) return -1;
+    int idx = val_count;
+    val_type[idx] = VAL_REC;
+    val_rec_count[idx] = 0;
+    val_count = val_count + 1;
+    return idx;
+}
+
+/* Set a field in a record. field_name_idx and val_idx are value indices.
+ * Returns 0 on success, -1 on error. */
+int val_rec_set(int rec_idx, int field_name_idx, int val_idx) {
+    if (rec_idx < 0 || rec_idx >= val_count) return -1;
+    if (val_type[rec_idx] != VAL_REC) return -1;
+
+    /* Check if field already exists — update in place */
+    int fc = val_rec_count[rec_idx];
+    int i = 0;
+    while (i < fc) {
+        if (val_rec_fld[vrf(rec_idx, i)] == field_name_idx) {
+            val_rec_val[vrf(rec_idx, i)] = val_idx;
+            return 0;
+        }
+        i = i + 1;
+    }
+
+    /* Add new field */
+    if (fc >= MAX_FIELDS) return -1;
+    val_rec_fld[vrf(rec_idx, fc)] = field_name_idx;
+    val_rec_val[vrf(rec_idx, fc)] = val_idx;
+    val_rec_count[rec_idx] = fc + 1;
+    return 0;
+}
+
+/* Get a field value from a record by field name string.
+ * Returns value index, or -1 if not found. */
+int val_rec_get(int rec_idx, char *field_name) {
+    if (rec_idx < 0 || rec_idx >= val_count) return -1;
+    if (val_type[rec_idx] != VAL_REC) return -1;
+
+    int fc = val_rec_count[rec_idx];
+    int i = 0;
+    while (i < fc) {
+        int fn_idx = val_rec_fld[vrf(rec_idx, i)];
+        if (val_type[fn_idx] == VAL_STR && str_eq(val_str_ptr(fn_idx), field_name)) {
+            return val_rec_val[vrf(rec_idx, i)];
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+/* Check if a record has a field. Returns 1 if exists, 0 if not. */
+int val_rec_has(int rec_idx, char *field_name) {
+    return val_rec_get(rec_idx, field_name) >= 0;
+}
+
+/* Format a value as a string into buf. Returns buf. */
+char *val_to_str(int idx, char *buf) {
+    if (idx < 0 || idx >= val_count) {
+        buf[0] = 0;
+        return buf;
+    }
+    if (val_type[idx] == VAL_INT) {
+        int_to_str(buf, val_int[idx]);
+    } else if (val_type[idx] == VAL_STR) {
+        str_copy(buf, val_str_ptr(idx));
+    } else if (val_type[idx] == VAL_REC) {
+        /* Debug representation: {field1: val1, field2: val2} */
+        int p = 0;
+        buf[p] = 123; /* '{' */
+        p = p + 1;
+        int fc = val_rec_count[idx];
+        int i = 0;
+        while (i < fc && p < MAX_VAR_VAL - 10) {
+            if (i > 0) {
+                buf[p] = 44; /* ',' */
+                p = p + 1;
+                buf[p] = 32; /* ' ' */
+                p = p + 1;
+            }
+            /* field name */
+            int fn_idx = val_rec_fld[vrf(idx, i)];
+            char tmp[MAX_VAR_VAL];
+            val_to_str(fn_idx, tmp);
+            int k = 0;
+            while (tmp[k] && p < MAX_VAR_VAL - 5) {
+                buf[p] = tmp[k];
+                p = p + 1;
+                k = k + 1;
+            }
+            buf[p] = 58; /* ':' */
+            p = p + 1;
+            buf[p] = 32; /* ' ' */
+            p = p + 1;
+            /* field value */
+            int fv_idx = val_rec_val[vrf(idx, i)];
+            val_to_str(fv_idx, tmp);
+            k = 0;
+            while (tmp[k] && p < MAX_VAR_VAL - 3) {
+                buf[p] = tmp[k];
+                p = p + 1;
+                k = k + 1;
+            }
+            i = i + 1;
+        }
+        buf[p] = 125; /* '}' */
+        p = p + 1;
+        buf[p] = 0;
+    } else {
+        buf[0] = 0;
+    }
+    return buf;
+}
+
+/* Compare two values for equality. Returns 1 if equal, 0 if not. */
+int val_eq(int a, int b) {
+    if (a < 0 || a >= val_count || b < 0 || b >= val_count) return 0;
+    if (val_type[a] != val_type[b]) return 0;
+    if (val_type[a] == VAL_INT) {
+        return val_int[a] == val_int[b];
+    }
+    if (val_type[a] == VAL_STR) {
+        return str_eq(val_str_ptr(a), val_str_ptr(b));
+    }
+    /* Records: equal only if same index */
+    return a == b;
+}
+
+/* Truthiness: nonzero int = true, nonempty string = true,
+ * record = true, invalid = false. */
+int val_is_truthy(int idx) {
+    if (idx < 0 || idx >= val_count) return 0;
+    if (val_type[idx] == VAL_INT) {
+        return val_int[idx] != 0;
+    }
+    if (val_type[idx] == VAL_STR) {
+        char *sp = val_str_ptr(idx);
+        return sp[0] != 0;
+    }
+    /* Records are always truthy */
+    return 1;
+}
+
 /* ---- Input buffer ---- */
 
 char line_buf[MAX_LINE_LEN];
@@ -316,9 +528,18 @@ char *tok_type_name(int t) {
     return "?";
 }
 
+char val_fmt_buf[MAX_VAR_VAL];
+
+void val_print(int idx) {
+    val_to_str(idx, val_fmt_buf);
+    uart_puts(val_fmt_buf);
+}
+
 int main() {
     uart_puts("sws 0.1");
     uart_newline();
+
+    val_reset();
 
     while (1) {
         uart_puts("> ");
@@ -329,6 +550,58 @@ int main() {
         int count = tokenize_line(line_buf);
         if (count < 0) continue; /* syntax error already reported */
         if (count == 0) continue; /* blank or comment-only */
+
+        /* Built-in: _valtest — exercise value type system */
+        if (str_eq(token_str(0), "_valtest")) {
+            val_reset();
+
+            /* Integer values */
+            int v0 = val_new_int(42);
+            int v1 = val_new_int(0);
+            int v2 = val_new_int(-7);
+
+            /* String values */
+            int v3 = val_new_str("hello");
+            int v4 = val_new_str("");
+
+            /* Record with fields */
+            int v5 = val_new_rec();
+            int fn_status = val_new_str("status");
+            int fv_status = val_new_int(0);
+            int fn_output = val_new_str("output");
+            int fv_output = val_new_str("ok");
+            val_rec_set(v5, fn_status, fv_status);
+            val_rec_set(v5, fn_output, fv_output);
+
+            /* Print each value */
+            uart_puts("int:"); val_print(v0); uart_newline();
+            uart_puts("zero:"); val_print(v1); uart_newline();
+            uart_puts("neg:"); val_print(v2); uart_newline();
+            uart_puts("str:"); val_print(v3); uart_newline();
+            uart_puts("empty:"); val_print(v4); uart_newline();
+            uart_puts("rec:"); val_print(v5); uart_newline();
+
+            /* Equality tests */
+            int v6 = val_new_int(42);
+            uart_puts("eq:"); uart_putint(val_eq(v0, v6)); uart_newline();
+            uart_puts("ne:"); uart_putint(val_eq(v0, v1)); uart_newline();
+
+            /* Truthiness */
+            uart_puts("truthy42:"); uart_putint(val_is_truthy(v0)); uart_newline();
+            uart_puts("truthy0:"); uart_putint(val_is_truthy(v1)); uart_newline();
+            uart_puts("truthyS:"); uart_putint(val_is_truthy(v3)); uart_newline();
+            uart_puts("truthyE:"); uart_putint(val_is_truthy(v4)); uart_newline();
+            uart_puts("truthyR:"); uart_putint(val_is_truthy(v5)); uart_newline();
+
+            /* Record field access */
+            int got = val_rec_get(v5, "status");
+            uart_puts("field:"); val_print(got); uart_newline();
+            uart_puts("has:"); uart_putint(val_rec_has(v5, "output")); uart_newline();
+            uart_puts("miss:"); uart_putint(val_rec_has(v5, "nope")); uart_newline();
+
+            uart_puts("vals:"); uart_putint(val_count); uart_newline();
+            continue;
+        }
 
         /* Debug: echo tokens */
         int j = 0;

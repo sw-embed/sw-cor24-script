@@ -65,6 +65,43 @@ run_test "nested braces" "if cond { if inner { echo yes } }\n\x04" \
     "[WORD|if] [WORD|cond] [BLOCK|{ if inner { echo yes } }]"
 
 echo ""
+echo "=== Testing sws value types ==="
+
+# Value type test via _valtest command
+VALOUT=$("$COR24_RUN" --run "$ASM" -u "_valtest\n\x04" -t 10 2>&1)
+
+check_val() {
+    local desc="$1"
+    local expected="$2"
+    if echo "$VALOUT" | grep -qF "$expected"; then
+        echo "PASS: $desc"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: $desc"
+        echo "  Expected: $expected"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+check_val "integer value"        "int:42"
+check_val "zero value"           "zero:0"
+check_val "negative value"       "neg:-7"
+check_val "string value"         "str:hello"
+check_val "empty string"         "empty:"
+check_val "record display"       "rec:{status: 0, output: ok}"
+check_val "equality true"        "eq:1"
+check_val "equality false"       "ne:0"
+check_val "truthy int"           "truthy42:1"
+check_val "truthy zero"          "truthy0:0"
+check_val "truthy string"        "truthyS:1"
+check_val "truthy empty"         "truthyE:0"
+check_val "truthy record"        "truthyR:1"
+check_val "record field get"     "field:0"
+check_val "record field has"     "has:1"
+check_val "record field miss"    "miss:0"
+check_val "total allocations"    "vals:11"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
