@@ -1027,9 +1027,134 @@ void block_pop(int pos) {
 /* Global line buffer for eval_block (avoids 512-byte stack local) */
 char eval_line_buf[MAX_LINE_LEN];
 
+/* ---- Command substitution ---- */
+
+char cmdsub_work[MAX_LINE_LEN];
+char cmdsub_inner[MAX_LINE_LEN];
+char cmdsub_result[MAX_VAR_VAL];
+int cmdsub_eval_ptr;  /* function pointer to eval_line, stored as int */
+
+/* Resolve all (cmd args...) command substitutions in a line.
+ * Processes innermost-first, iteratively.
+ * Modifies line in-place. Returns 0 on success, -1 on error. */
+int resolve_cmdsub(char *line) {
+    int iterations = MAX_NEST;
+    while (iterations > 0) {
+        iterations = iterations - 1;
+
+        /* Find last unquoted/unbraced '(' */
+        int last_open = -1;
+        int i = 0;
+        while (line[i]) {
+            if (line[i] == 34) { /* '"' skip quoted string */
+                i = i + 1;
+                while (line[i] && line[i] != 34) {
+                    if (line[i] == 92) i = i + 1; /* backslash */
+                    if (line[i]) i = i + 1;
+                }
+                if (line[i]) i = i + 1;
+            } else if (line[i] == 123) { /* '{' skip brace block */
+                int d = 1;
+                i = i + 1;
+                while (line[i] && d > 0) {
+                    if (line[i] == 123) d = d + 1;
+                    if (line[i] == 125) d = d - 1;
+                    i = i + 1;
+                }
+            } else if (line[i] == 40) { /* '(' */
+                last_open = i;
+                i = i + 1;
+            } else {
+                i = i + 1;
+            }
+        }
+
+        if (last_open < 0) break; /* no more command substitutions */
+
+        /* Find matching ')' after last_open, skipping quotes/braces */
+        int close_pos = -1;
+        i = last_open + 1;
+        while (line[i]) {
+            if (line[i] == 34) { /* '"' */
+                i = i + 1;
+                while (line[i] && line[i] != 34) {
+                    if (line[i] == 92) i = i + 1;
+                    if (line[i]) i = i + 1;
+                }
+                if (line[i]) i = i + 1;
+            } else if (line[i] == 123) { /* '{' */
+                int d = 1;
+                i = i + 1;
+                while (line[i] && d > 0) {
+                    if (line[i] == 123) d = d + 1;
+                    if (line[i] == 125) d = d - 1;
+                    i = i + 1;
+                }
+            } else if (line[i] == 41) { /* ')' */
+                close_pos = i;
+                break;
+            } else {
+                i = i + 1;
+            }
+        }
+
+        if (close_pos < 0) {
+            uart_puts("error: unmatched (");
+            uart_newline();
+            return -1;
+        }
+
+        /* Extract inner command: line[last_open+1 .. close_pos-1] */
+        int inner_len = close_pos - last_open - 1;
+        int k = 0;
+        while (k < inner_len && k < MAX_LINE_LEN - 1) {
+            cmdsub_inner[k] = line[last_open + 1 + k];
+            k = k + 1;
+        }
+        cmdsub_inner[k] = 0;
+
+        /* Evaluate inner command via function pointer */
+        int (*efn)(char *) = cmdsub_eval_ptr;
+        int ret = efn(cmdsub_inner);
+        if (ret == RET_ERR) return -1;
+
+        /* Get result as string */
+        val_to_str(last_result, cmdsub_result);
+
+        /* Rebuild line: prefix + result + suffix */
+        int p = 0;
+        k = 0;
+        while (k < last_open && p < MAX_LINE_LEN - 1) {
+            cmdsub_work[p] = line[k];
+            p = p + 1;
+            k = k + 1;
+        }
+        k = 0;
+        while (cmdsub_result[k] && p < MAX_LINE_LEN - 1) {
+            cmdsub_work[p] = cmdsub_result[k];
+            p = p + 1;
+            k = k + 1;
+        }
+        k = close_pos + 1;
+        while (line[k] && p < MAX_LINE_LEN - 1) {
+            cmdsub_work[p] = line[k];
+            p = p + 1;
+            k = k + 1;
+        }
+        cmdsub_work[p] = 0;
+
+        /* Copy back to line */
+        str_copy(line, cmdsub_work);
+    }
+    return 0;
+}
+
 /* ---- Line and block evaluation ---- */
 
 int eval_line(char *line) {
+    /* Resolve (cmd args...) command substitutions before tokenizing */
+    if (resolve_cmdsub(line) < 0) return RET_ERR;
+
     int count = tokenize_line(line);
     if (count < 0) return RET_ERR;
     if (count == 0) return RET_OK;
@@ -1882,6 +2007,78 @@ int cmd_incr() {
     return RET_OK;
 }
 
+/* ---- Arithmetic commands ---- */
+
+int cmd_add() {
+    if (expand_count < 3) {
+        uart_puts("error: +: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int a = str_to_int(exp_str(1));
+    int b = str_to_int(exp_str(2));
+    last_result = val_new_int(a + b);
+    return RET_OK;
+}
+
+int cmd_sub() {
+    if (expand_count < 3) {
+        uart_puts("error: -: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int a = str_to_int(exp_str(1));
+    int b = str_to_int(exp_str(2));
+    last_result = val_new_int(a - b);
+    return RET_OK;
+}
+
+int cmd_mul() {
+    if (expand_count < 3) {
+        uart_puts("error: *: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int a = str_to_int(exp_str(1));
+    int b = str_to_int(exp_str(2));
+    last_result = val_new_int(a * b);
+    return RET_OK;
+}
+
+int cmd_div() {
+    if (expand_count < 3) {
+        uart_puts("error: /: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int a = str_to_int(exp_str(1));
+    int b = str_to_int(exp_str(2));
+    if (b == 0) {
+        uart_puts("error: /: division by zero");
+        uart_newline();
+        return RET_ERR;
+    }
+    last_result = val_new_int(a / b);
+    return RET_OK;
+}
+
+int cmd_mod() {
+    if (expand_count < 3) {
+        uart_puts("error: %: expected 2 args");
+        uart_newline();
+        return RET_ERR;
+    }
+    int a = str_to_int(exp_str(1));
+    int b = str_to_int(exp_str(2));
+    if (b == 0) {
+        uart_puts("error: %: division by zero");
+        uart_newline();
+        return RET_ERR;
+    }
+    last_result = val_new_int(a % b);
+    return RET_OK;
+}
+
 /* ---- Command registration ---- */
 
 void register_builtins() {
@@ -1907,6 +2104,12 @@ void register_builtins() {
     cmd_register("break", cmd_break);
     cmd_register("continue", cmd_continue_);
     cmd_register("incr", cmd_incr);
+    /* Arithmetic commands */
+    cmd_register("+", cmd_add);
+    cmd_register("-", cmd_sub);
+    cmd_register("*", cmd_mul);
+    cmd_register("/", cmd_div);
+    cmd_register("%", cmd_mod);
     /* Pragma and run */
     cmd_register("pragma", cmd_pragma);
     cmd_register("run", cmd_run);
@@ -1945,6 +2148,7 @@ int main() {
     block_stack_top = 0;
     source_depth = 0;
     register_builtins();
+    cmdsub_eval_ptr = eval_line;
 
     last_result = val_new_int(0);
 

@@ -275,6 +275,46 @@ run_test "env no args" "env\n\x04" "error: env: expected subcommand and args"
 run_test "env set no val" "env set X\n\x04" "error: env set: expected NAME VALUE"
 
 echo ""
+echo "=== Testing sws arithmetic commands ==="
+
+# Basic arithmetic
+run_test "add" "echo (+ 1 2)\n\x04" "3"
+run_test "subtract" "echo (- 10 3)\n\x04" "7"
+run_test "multiply" "echo (* 4 5)\n\x04" "20"
+run_test "divide" "echo (/ 15 3)\n\x04" "5"
+run_test "modulo" "echo (% 17 5)\n\x04" "2"
+
+# Negative results
+run_test "sub negative" "echo (- 3 10)\n\x04" "-7"
+
+# Division by zero
+run_test "div by zero" "echo (/ 1 0)\n\x04" "error: /: division by zero"
+run_test "mod by zero" "echo (% 1 0)\n\x04" "error: %: division by zero"
+
+echo ""
+echo "=== Testing sws command substitution ==="
+
+# Basic command substitution
+run_test "cmdsub set" "set x (+ 1 2)\necho \$x\n\x04" "3"
+run_test "cmdsub echo" "echo (+ 10 20)\n\x04" "30"
+
+# Nested command substitution
+run_test "cmdsub nested" "echo (+ (+ 1 2) (+ 3 4))\n\x04" "10"
+run_test "cmdsub deep nest" "echo (+ (+ (+ 1 1) 2) 3)\n\x04" "7"
+
+# Command substitution with variables
+run_test "cmdsub with vars" "set a 5\necho (+ \$a 10)\n\x04" "15"
+
+# Command substitution in if condition block
+run_test "cmdsub in if" "if {eq (+ 1 1) 2} {echo math works}\n\x04" "math works"
+
+# incr via command substitution
+run_test "cmdsub incr loop" "set i 0\nincr i (+ 3 2)\necho \$i\n\x04" "5"
+
+# Unmatched paren
+run_test "unmatched paren" "echo (+ 1 2\n\x04" "error: unmatched ("
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 
 if [ "$FAIL" -gt 0 ]; then
