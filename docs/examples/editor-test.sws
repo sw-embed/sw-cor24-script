@@ -1,0 +1,23 @@
+# editor-test.sws -- Run the swye editor from sws
+#
+# Demonstrates sws launching another COR24 binary:
+#   1. sws calls swye's _main via function pointer
+#   2. swye reads pre-loaded edit commands from memory
+#   3. swye edits the buffer, quits, returns to sws
+#   4. sws reads the edited text from $rc.output
+#
+# Run with: bash docs/examples/editor-demo.sh
+
+pragma run-rc on
+
+echo "=== Editor Test ==="
+echo "Launching swye..."
+run swye
+echo "rc.run:" $rc.run
+echo "rc.kind:" $rc.kind
+if {exists? $rc.output} {
+    echo ""
+    echo "Edited text:"
+    echo $rc.output
+}
+exit

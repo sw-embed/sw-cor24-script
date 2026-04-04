@@ -1,0 +1,22 @@
+# fizzbuzz.sws -- Classic FizzBuzz in sws
+#
+# Demonstrates while, if/else, modulo, comparison, incr
+
+set i 1
+while {le $i 15} {
+    if {eq (% $i 15) 0} {
+        echo "FizzBuzz"
+    } else {
+        if {eq (% $i 3) 0} {
+            echo "Fizz"
+        } else {
+            if {eq (% $i 5) 0} {
+                echo "Buzz"
+            } else {
+                echo $i
+            }
+        }
+    }
+    incr i
+}
+exit

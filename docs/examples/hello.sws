@@ -11,3 +11,4 @@ echo "Hello from" $name
 # Integer values
 set year 2026
 echo "Year:" $year
+exit

@@ -4,16 +4,36 @@
 
 ### New Features
 
+- **`run` command — real binary execution**: `run swye` calls another
+  COR24 binary's `_main` via function pointer and returns to sws when
+  done. Entry points are resolved from a patched run table at
+  `0x0FFE00`. Editor commands are pre-loaded at `0x0F0000`; edited
+  output is captured from `0x0F0400` into `$rc.output`.
+- **Value pool garbage collector**: mark-compact GC reclaims unreachable
+  values at each `while` iteration, fixing value pool exhaustion
+  (MAX_VALS=64) that caused loops to fail after ~10 iterations.
 - `concat` command: concatenate arguments into a single string with no
   separators. Supports integer auto-conversion and command substitution.
   Example: `concat "x=" (+ 1 2)` → `"x=3"`
+
+### Bug Fixes
+
+- Fixed comment lines containing `()` being parsed as command
+  substitutions (e.g., `# arithmetic (%)` would execute `%`)
+
+### Examples
+
+- `fizzbuzz.sws` — classic FizzBuzz demonstrating loops and control flow
+- `editor-test.sws` + `editor-demo.sh` — end-to-end demo of sws
+  launching the swye editor, scripting edits, and reading back results
+- Added `exit` to all example scripts for clean termination
 
 ### Documentation
 
 - Added `docs/usage.md`: comprehensive usage guide with runnable examples
   covering variables, arithmetic, control flow, records, env, filesystem,
   and common patterns/idioms
-- Updated README.md to link to the usage guide
+- Updated README.md with editor automation example and runnable demo
 
 ## v0.1
 
@@ -58,7 +78,7 @@ Initial release of the sws (Software Wrighter Script) interpreter for COR24.
 ### Known Limitations
 
 - Filesystem commands are stubs — no COR24 OS syscalls yet
-- `run` always returns not-found (no process execution yet)
+- `run` requires binaries co-loaded via emulator `--load-binary` + `--patch`
 - `source` requires filesystem read support
 - Maximum 64 variables, 64 values, 48 commands
 - Maximum 32 tokens per line, 512-byte line length

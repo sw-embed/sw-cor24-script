@@ -12,6 +12,13 @@
 #define UART_DATA   0xFF0100
 #define UART_STATUS 0xFF0101
 
+/* Well-known addresses for binary co-loading */
+#define RUN_CMD_BUF   0x0F0000  /* command input buffer for called program */
+#define RUN_CMD_SIZE  1024
+#define RUN_OUT_BUF   0x0F0400  /* output buffer from called program */
+#define RUN_OUT_SIZE  4096
+#define RUN_ENTRY_0   0x0FFE00  /* entry point: slot 0 (swye) */
+
 void uart_putc(int ch) {
     int tries = 50000;
     while ((*(char *)UART_STATUS & 0x80) && tries > 0) {
@@ -296,6 +303,10 @@ int  val_rec_fld[VAL_REC_POOL_SIZE];           /* field name value indices */
 int  val_rec_val[VAL_REC_POOL_SIZE];           /* field value indices */
 int  val_rec_count[MAX_VALS];
 int  val_count;
+
+/* GC working arrays */
+int val_gc_mark[MAX_VALS];
+int val_gc_remap[MAX_VALS];
 
 /* Index helpers for flat arrays */
 int vsp(int idx) { return idx * MAX_VAR_VAL; }  /* val_str_pool offset */
@@ -770,6 +781,97 @@ int cmd_find(char *name) {
 #define RET_CONTINUE -3
 
 int last_result; /* value index of last command/expression result */
+
+/* ---- Value garbage collector ---- */
+/* Mark-compact GC: keeps values reachable from variables and last_result,
+ * compacts the pool, and updates all references. */
+void val_gc() {
+    int i;
+    int j;
+    /* Clear marks */
+    i = 0;
+    while (i < val_count) {
+        val_gc_mark[i] = 0;
+        i = i + 1;
+    }
+    /* Mark values referenced by variables */
+    i = 0;
+    while (i < var_count) {
+        if (var_val[i] >= 0 && var_val[i] < val_count)
+            val_gc_mark[var_val[i]] = 1;
+        i = i + 1;
+    }
+    /* Mark last_result */
+    if (last_result >= 0 && last_result < val_count)
+        val_gc_mark[last_result] = 1;
+    /* Mark record field names and values (one pass — no nested records) */
+    i = 0;
+    while (i < val_count) {
+        if (val_gc_mark[i] && val_type[i] == VAL_REC) {
+            j = 0;
+            while (j < val_rec_count[i]) {
+                int fi = vrf(i, j);
+                if (val_rec_fld[fi] >= 0 && val_rec_fld[fi] < val_count)
+                    val_gc_mark[val_rec_fld[fi]] = 1;
+                if (val_rec_val[fi] >= 0 && val_rec_val[fi] < val_count)
+                    val_gc_mark[val_rec_val[fi]] = 1;
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    /* Build remap table and compact */
+    int new_count = 0;
+    i = 0;
+    while (i < val_count) {
+        if (val_gc_mark[i]) {
+            val_gc_remap[i] = new_count;
+            if (new_count != i) {
+                val_type[new_count] = val_type[i];
+                val_int[new_count] = val_int[i];
+                str_copy(val_str_ptr(new_count), val_str_ptr(i));
+                val_rec_count[new_count] = val_rec_count[i];
+                j = 0;
+                while (j < MAX_FIELDS) {
+                    val_rec_fld[vrf(new_count, j)] = val_rec_fld[vrf(i, j)];
+                    val_rec_val[vrf(new_count, j)] = val_rec_val[vrf(i, j)];
+                    j = j + 1;
+                }
+            }
+            new_count = new_count + 1;
+        } else {
+            val_gc_remap[i] = -1;
+        }
+        i = i + 1;
+    }
+    /* Update variable references */
+    i = 0;
+    while (i < var_count) {
+        if (var_val[i] >= 0 && var_val[i] < val_count)
+            var_val[i] = val_gc_remap[var_val[i]];
+        i = i + 1;
+    }
+    /* Update last_result */
+    if (last_result >= 0 && last_result < val_count)
+        last_result = val_gc_remap[last_result];
+    /* Update record field/value references */
+    i = 0;
+    while (i < new_count) {
+        if (val_type[i] == VAL_REC) {
+            j = 0;
+            while (j < val_rec_count[i]) {
+                int fi = vrf(i, j);
+                if (val_rec_fld[fi] >= 0)
+                    val_rec_fld[fi] = val_gc_remap[val_rec_fld[fi]];
+                if (val_rec_val[fi] >= 0)
+                    val_rec_val[fi] = val_gc_remap[val_rec_val[fi]];
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    val_count = new_count;
+}
 
 /* ---- Built-in command handlers ---- */
 
@@ -1430,6 +1532,7 @@ int cmd_while() {
     int max_iter = 10000;
     while (max_iter > 0) {
         max_iter = max_iter - 1;
+        val_gc();
 
         int ret = eval_block(block_get(ci));
         if (ret == RET_ERR) { block_pop(save); return RET_ERR; }
@@ -1516,13 +1619,24 @@ int set_rc_record(int run_code, int detail, char *msg, char *kind) {
     return 0;
 }
 
-int cmd_run() {
-    if (!pragma_run_rc) {
-        /* Without pragma, run still works but doesn't set $rc */
-    }
+/* Read a 24-bit word from a memory address */
+int mem_read_word(int addr) {
+    char *p = (char *)addr;
+    int lo = p[0] & 0xFF;
+    int mid = p[1] & 0xFF;
+    int hi = p[2] & 0xFF;
+    return lo + mid * 256 + hi * 65536;
+}
 
+int run_resolve(char *name) {
+    if (str_eq(name, "swye")) {
+        return mem_read_word(RUN_ENTRY_0);
+    }
+    return 0;
+}
+
+int cmd_run() {
     if (expand_count < 2) {
-        /* Usage error */
         if (pragma_run_rc) {
             set_rc_record(4, 0, "invalid run invocation", "usage-error");
         }
@@ -1531,16 +1645,47 @@ int cmd_run() {
         return RET_ERR;
     }
 
-    /* For now, on COR24, process execution is not yet available.
-     * Simulate a "not found" result for any program.
-     * Future: use OS syscall to launch child binary. */
+    char *prog = exp_str(1);
+    int entry = run_resolve(prog);
 
-    if (pragma_run_rc) {
-        set_rc_record(1, 1, "binary not found", "not-found");
+    if (entry == 0) {
+        if (pragma_run_rc) {
+            set_rc_record(1, 1, "binary not loaded", "not-found");
+        }
+        last_result = val_new_int(1);
+        return RET_OK;
     }
 
-    /* The run command evaluates to $rc.run */
-    last_result = val_new_int(1); /* not-found */
+    /* If args given, copy to command input buffer.
+     * If no args, leave buffer untouched (may be pre-loaded). */
+    if (expand_count >= 3) {
+        char *dst = (char *)RUN_CMD_BUF;
+        char *cmds = exp_str(2);
+        int i = 0;
+        while (cmds[i] && i < RUN_CMD_SIZE - 1) {
+            dst[i] = cmds[i];
+            i = i + 1;
+        }
+        dst[i] = 0;
+    }
+
+    *(char *)RUN_OUT_BUF = 0;
+
+    int (*prog_main)() = entry;
+    int result = prog_main();
+
+    if (pragma_run_rc) {
+        set_rc_record(0, result, 0, "ok");
+        /* Capture output buffer into $rc.output if non-empty */
+        char *out = (char *)RUN_OUT_BUF;
+        if (out[0]) {
+            int rec = env_get("rc");
+            int fn_out = val_new_str("output");
+            int fv_out = val_new_str(out);
+            val_rec_set(rec, fn_out, fv_out);
+        }
+    }
+    last_result = val_new_int(0);
     return RET_OK;
 }
 

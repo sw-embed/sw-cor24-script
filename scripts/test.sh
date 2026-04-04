@@ -158,7 +158,7 @@ run_test "pragma run-rc on" "pragma run-rc on\nrun something\necho \$rc.run\n\x0
 run_test "rc.kind not-found" "pragma run-rc on\nrun something\necho \$rc.kind\n\x04" "not-found"
 
 # $rc.msg after not-found run
-run_test "rc.msg not-found" "pragma run-rc on\nrun something\necho \$rc.msg\n\x04" "binary not found"
+run_test "rc.msg not-found" "pragma run-rc on\nrun something\necho \$rc.msg\n\x04" "binary not loaded"
 
 # $rc.err after not-found run
 run_test "rc.err not-found" "pragma run-rc on\nrun something\necho \$rc.err\n\x04" "1"

@@ -44,3 +44,4 @@ echo "Checking /bin..." (fexists /bin)
 
 echo ""
 echo "System check complete"
+exit

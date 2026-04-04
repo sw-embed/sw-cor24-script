@@ -45,6 +45,56 @@ while {le $i 15} {
 }
 ```
 
+## Scripting Example: Editor Automation
+
+sws can launch other COR24 binaries via `run` and read back their
+output. This example drives
+[sw-cor24-yocto-ed](https://github.com/sw-embed/sw-cor24-yocto-ed),
+a modal text editor, to replace "red" with "blue" in a test file:
+
+```tcl
+# editor-test.sws
+pragma run-rc on
+echo "=== Editor Test ==="
+echo "Launching swye..."
+run swye
+echo "rc.run:" $rc.run
+echo "rc.kind:" $rc.kind
+if {exists? $rc.output} {
+    echo ""
+    echo "Edited text:"
+    echo $rc.output
+}
+exit
+```
+
+The demo co-loads both binaries in the emulator. Editor commands
+(move, delete, insert, quit) are pre-loaded in memory at `0x0F0000`.
+sws calls swye's `_main` via function pointer; swye reads commands
+from the buffer, edits, and returns. sws reads the result from
+`$rc.output`:
+
+```bash
+$ bash docs/examples/editor-demo.sh
+
+=== Input ===
+The quick red fox jumps over the lazy brown dog.
+Line two of the test file.
+Line three here.
+
+Edit plan: replace 'red' with 'blue'
+
+=== sws output ===
+Edited text:
+The quick blue fox jumps over the lazy brown dog.
+Line two of the test file.
+Line three here.
+
+PASS: sws launched swye, edited red->blue, read back the result
+```
+
+See [docs/examples/](docs/examples/) for all demos.
+
 ## Language Reference
 
 ### Value Types
