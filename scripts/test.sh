@@ -4,10 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BUILD_DIR="build"
-ASM="$BUILD_DIR/sws.s"
+BIN="$BUILD_DIR/sws.bin"
 COR24_RUN="cor24-run"
 
-# Build first
+# Build once (compile + assemble)
 ./scripts/build.sh build
 
 PASS=0
@@ -18,7 +18,7 @@ run_test() {
     local input="$2"
     local expected="$3"
 
-    OUTPUT=$("$COR24_RUN" --run "$ASM" -u "$input" -t 5 2>&1)
+    OUTPUT=$("$COR24_RUN" --load-binary "$BIN@0" --entry 0 --speed 0 -u "$input" -t 5 2>&1)
 
     if echo "$OUTPUT" | grep -qF -- "$expected"; then
         echo "PASS: $desc"
@@ -68,7 +68,7 @@ echo ""
 echo "=== Testing sws value types ==="
 
 # Value type test via _valtest command
-VALOUT=$("$COR24_RUN" --run "$ASM" -u "_valtest\n\x04" -t 10 2>&1)
+VALOUT=$("$COR24_RUN" --load-binary "$BIN@0" --entry 0 --speed 0 -u "_valtest\n\x04" -t 10 2>&1)
 
 check_val() {
     local desc="$1"
@@ -132,7 +132,7 @@ run_test "unknown command" "frobnicate\n\x04" "error: unknown command: frobnicat
 # exit command
 run_test "exit halts" "echo before\nexit\necho after\n\x04" "before"
 # Verify "after" does NOT appear (exit should stop execution)
-OUTPUT=$("$COR24_RUN" --run "$ASM" -u "echo before\nexit\necho after\n\x04" -t 5 2>&1)
+OUTPUT=$("$COR24_RUN" --load-binary "$BIN@0" --entry 0 --speed 0 -u "echo before\nexit\necho after\n\x04" -t 5 2>&1)
 if echo "$OUTPUT" | grep -qF "after"; then
     echo "FAIL: exit stops execution"
     echo "  Got 'after' in output — exit did not halt"
@@ -321,7 +321,7 @@ echo "=== Testing sws control flow ==="
 run_test "if true" "if {eq 1 1} {echo yes}\n\x04" "yes"
 
 # if false (no output from body)
-OUTPUT=$("$COR24_RUN" --run "$ASM" -u "if {eq 1 2} {echo no}\necho done\n\x04" -t 5 2>&1)
+OUTPUT=$("$COR24_RUN" --load-binary "$BIN@0" --entry 0 --speed 0 -u "if {eq 1 2} {echo no}\necho done\n\x04" -t 5 2>&1)
 if echo "$OUTPUT" | grep -qF "done" && ! echo "$OUTPUT" | grep -qF "no"; then
     echo "PASS: if false skips body"
     PASS=$((PASS + 1))

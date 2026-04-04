@@ -16,11 +16,15 @@ TC24R="tc24r"
 TC24R_INCLUDE="/Users/mike/github/sw-embed/sw-cor24-x-tinyc/include"
 COR24_RUN="cor24-run"
 
+BIN="$BUILD_DIR/sws.bin"
+LST="$BUILD_DIR/sws.lst"
+
 build() {
     mkdir -p "$BUILD_DIR"
     echo "=== Compiling sws ==="
     "$TC24R" "$SRC" -o "$ASM" -I "$TC24R_INCLUDE"
     echo "  $SRC -> $ASM"
+    "$COR24_RUN" --assemble "$ASM" "$BIN" "$LST" 2>&1 | head -1
     echo ""
 }
 
